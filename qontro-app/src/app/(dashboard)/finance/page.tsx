@@ -6,13 +6,15 @@ import {
   Plus, 
   DollarSign, 
   Clock, 
-  AlertTriangle, 
   CheckCircle2, 
-  Download,
+  Download, 
+  TrendingDown, 
+  Trash2, 
+  FileText,
+  X,
   Building2,
-  TrendingDown,
-  Trash2,
-  FileText
+  Users,
+  Receipt
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { Invoice, InvoiceStatus, Expense, Client } from '@/types';
@@ -29,7 +31,8 @@ export default function FinancePage() {
     deleteInvoice, 
     addExpense, 
     deleteExpense, 
-    addClient 
+    addClient,
+    currentWorkspace
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<'invoices' | 'expenses' | 'clients'>('invoices');
@@ -37,6 +40,7 @@ export default function FinancePage() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
   const [pdfPreviewInvoice, setPdfPreviewInvoice] = useState<Invoice | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Invoice form
   const [clientName, setClientName] = useState('');
@@ -58,7 +62,6 @@ export default function FinancePage() {
   // Calculations
   const totalSettledRevenue = invoices.filter((i) => i.status === 'paid').reduce((acc, curr) => acc + curr.amount, 0);
   const totalPending = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue').reduce((acc, curr) => acc + curr.amount, 0);
-  const totalOverdue = invoices.filter((i) => i.status === 'overdue').reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
   const netProfitEstimate = totalSettledRevenue - totalExpenses;
 
@@ -67,8 +70,8 @@ export default function FinancePage() {
     if (!clientName.trim()) return;
 
     addInvoice({
-      workspace_id: 'ws_prod_01',
-      invoice_number: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
+      workspace_id: currentWorkspace.id,
+      invoice_number: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
       client_name: clientName,
       client_email: clientEmail,
       amount: Number(amount),
@@ -98,7 +101,7 @@ export default function FinancePage() {
     if (!expenseName.trim()) return;
 
     addExpense({
-      workspace_id: 'ws_prod_01',
+      workspace_id: currentWorkspace.id,
       name: expenseName,
       category: expenseCategory,
       amount: Number(expenseAmount),
@@ -115,10 +118,11 @@ export default function FinancePage() {
     if (!newClientName.trim()) return;
 
     addClient({
-      workspace_id: 'ws_prod_01',
+      workspace_id: currentWorkspace.id,
       name: newClientName,
       company_name: newClientCompany,
       email: newClientEmail,
+      phone: '',
       status: 'active',
     });
 
@@ -128,86 +132,114 @@ export default function FinancePage() {
     setShowClientModal(false);
   };
 
+  const handleDownloadPDF = async () => {
+    if (!pdfPreviewInvoice) return;
+    setIsGeneratingPdf(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+      
+      const element = document.getElementById('invoice-print-area');
+      if (!element) return;
+
+      const canvas = await html2canvas(element, { 
+        scale: 2, 
+        useCORS: true, 
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [canvas.width / 2, canvas.height / 2],
+      });
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+      pdf.save(`Invoice_${pdfPreviewInvoice.invoice_number}.pdf`);
+    } catch (err) {
+      console.error('Failed to generate PDF', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 font-sans">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <CreditCard className="w-6 h-6 text-emerald-400" />
+          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <CreditCard className="w-5 h-5 text-zinc-100" />
             Money Flow & Receivables
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Track business revenue health, expenses, client contracts, and generate compliant PDF invoices.
+          <p className="text-xs text-zinc-400 mt-1">
+            Track business revenue health, operational burn, client contracts, and generate PDF invoices.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowExpenseModal(true)}
-            className="px-3 py-2 rounded-lg bg-[#222222] border border-[#333333] hover:bg-[#2a2a2a] text-white font-medium text-xs flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-[#0e0e13] border border-[#1f1f26] hover:bg-zinc-800 text-zinc-200 font-medium text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <TrendingDown className="w-4 h-4 text-rose-400" />
+            <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
             Record Expense
           </button>
           <button
             onClick={() => setShowInvoiceModal(true)}
-            className="px-4 py-2 rounded-lg bg-white text-black font-semibold text-xs hover:opacity-90 transition-all flex items-center gap-1.5"
+            className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-zinc-200 text-black font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             Create Invoice
           </button>
         </div>
       </div>
 
       {/* Financial Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-5 space-y-1 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-4 space-y-1">
+          <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500">
             Settled Revenue
           </div>
-          <div className="text-2xl font-bold text-emerald-400">{formatCurrency(totalSettledRevenue)}</div>
-          <div className="text-[10px] text-gray-500">Paid into company account</div>
+          <div className="text-xl font-bold text-emerald-400 font-mono">{formatCurrency(totalSettledRevenue)}</div>
+          <div className="text-[10px] text-zinc-500 font-mono">Paid into account</div>
         </div>
 
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-5 space-y-1 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-blue-400" />
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-4 space-y-1">
+          <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500">
             Pending Receivables
           </div>
-          <div className="text-2xl font-bold text-white">{formatCurrency(totalPending)}</div>
-          <div className="text-[10px] text-gray-500">Unsettled client invoices</div>
+          <div className="text-xl font-bold text-white font-mono">{formatCurrency(totalPending)}</div>
+          <div className="text-[10px] text-zinc-500 font-mono">Unsettled invoices</div>
         </div>
 
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-5 space-y-1 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-            <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-4 space-y-1">
+          <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500">
             Total Expenses
           </div>
-          <div className="text-2xl font-bold text-rose-400">{formatCurrency(totalExpenses)}</div>
-          <div className="text-[10px] text-gray-500">Payroll, software & tools</div>
+          <div className="text-xl font-bold text-rose-400 font-mono">{formatCurrency(totalExpenses)}</div>
+          <div className="text-[10px] text-zinc-500 font-mono">Infra, API & tools</div>
         </div>
 
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-5 space-y-1 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-purple-400" />
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-4 space-y-1">
+          <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-500">
             Estimated Net Profit
           </div>
-          <div className={cn("text-2xl font-bold", netProfitEstimate >= 0 ? "text-white" : "text-red-400")}>
+          <div className={cn("text-xl font-bold font-mono", netProfitEstimate >= 0 ? "text-white" : "text-rose-400")}>
             {formatCurrency(netProfitEstimate)}
           </div>
-          <div className="text-[10px] text-gray-500">Revenue minus expenses</div>
+          <div className="text-[10px] text-zinc-500 font-mono">Revenue minus burn</div>
         </div>
       </div>
 
       {/* Sub-Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#2a2a2a] pb-2 text-xs">
+      <div className="flex items-center gap-1 border-b border-[#18181f] pb-2 text-xs">
         <button
           onClick={() => setActiveTab('invoices')}
           className={cn(
-            "px-3 py-1.5 rounded-lg font-medium transition-colors",
-            activeTab === 'invoices' ? "bg-[#2a2a2a] text-white font-semibold" : "text-gray-400 hover:text-gray-200"
+            "px-3 py-1.5 rounded-lg font-mono text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer",
+            activeTab === 'invoices' ? "bg-zinc-800 text-white border border-zinc-700 shadow-sm" : "text-zinc-400 hover:text-white"
           )}
         >
           Invoices ({invoices.length})
@@ -215,8 +247,8 @@ export default function FinancePage() {
         <button
           onClick={() => setActiveTab('expenses')}
           className={cn(
-            "px-3 py-1.5 rounded-lg font-medium transition-colors",
-            activeTab === 'expenses' ? "bg-[#2a2a2a] text-white font-semibold" : "text-gray-400 hover:text-gray-200"
+            "px-3 py-1.5 rounded-lg font-mono text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer",
+            activeTab === 'expenses' ? "bg-zinc-800 text-white border border-zinc-700 shadow-sm" : "text-zinc-400 hover:text-white"
           )}
         >
           Expenses ({expenses.length})
@@ -224,8 +256,8 @@ export default function FinancePage() {
         <button
           onClick={() => setActiveTab('clients')}
           className={cn(
-            "px-3 py-1.5 rounded-lg font-medium transition-colors",
-            activeTab === 'clients' ? "bg-[#2a2a2a] text-white font-semibold" : "text-gray-400 hover:text-gray-200"
+            "px-3 py-1.5 rounded-lg font-mono text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer",
+            activeTab === 'clients' ? "bg-zinc-800 text-white border border-zinc-700 shadow-sm" : "text-zinc-400 hover:text-white"
           )}
         >
           Clients Directory ({clients.length})
@@ -234,56 +266,50 @@ export default function FinancePage() {
 
       {/* 1. Invoices Tab */}
       {activeTab === 'invoices' && (
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-6 shadow-sm space-y-4">
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#161616] border-b border-[#2a2a2a] text-gray-400 uppercase font-semibold text-[10px]">
+              <thead className="bg-[#0c0c10] border-b border-[#18181f] text-zinc-400 uppercase font-semibold text-[10px] tracking-wider font-mono">
                 <tr>
-                  <th className="py-3 px-4">Invoice #</th>
-                  <th className="py-3 px-4">Client</th>
-                  <th className="py-3 px-4">Project</th>
-                  <th className="py-3 px-4">Due Date</th>
-                  <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">PDF & Actions</th>
+                  <th className="py-2.5 px-4">Invoice #</th>
+                  <th className="py-2.5 px-4">Client</th>
+                  <th className="py-2.5 px-4">Project</th>
+                  <th className="py-2.5 px-4">Due Date</th>
+                  <th className="py-2.5 px-4">Amount</th>
+                  <th className="py-2.5 px-4">Status</th>
+                  <th className="py-2.5 px-4 text-right">PDF & Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#262626] text-gray-300">
+              <tbody className="divide-y divide-[#14141c] text-zinc-300">
                 {invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 font-mono font-medium text-gray-200">{inv.invoice_number}</td>
-                    <td className="py-3 px-4 font-medium text-white">{inv.client_name}</td>
-                    <td className="py-3 px-4 text-gray-400">{inv.project_name}</td>
-                    <td className="py-3 px-4 text-gray-400">{inv.due_date}</td>
-                    <td className="py-3 px-4 font-bold text-white">{formatCurrency(inv.amount)}</td>
-                    <td className="py-3 px-4">
+                  <tr key={inv.id} className="hover:bg-zinc-900/40 transition-colors">
+                    <td className="py-2.5 px-4 font-mono text-zinc-300 font-medium">{inv.invoice_number}</td>
+                    <td className="py-2.5 px-4 font-semibold text-white">{inv.client_name}</td>
+                    <td className="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">{inv.project_name}</td>
+                    <td className="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">{inv.due_date}</td>
+                    <td className="py-2.5 px-4 font-bold text-white font-mono">{formatCurrency(inv.amount)}</td>
+                    <td className="py-2.5 px-4">
                       <select
                         value={inv.status}
                         onChange={(e) => updateInvoiceStatus(inv.id, e.target.value as InvoiceStatus)}
-                        className={cn(
-                          "text-[10px] font-bold uppercase px-2 py-1 rounded border focus:outline-none cursor-pointer",
-                          inv.status === 'paid' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                          inv.status === 'overdue' ? "bg-red-500/10 text-red-400 border-red-500/20" :
-                          inv.status === 'sent' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                          "bg-gray-500/10 text-gray-400 border-gray-500/20"
-                        )}
+                        className="bg-[#0d0d12] border border-[#22222a] rounded px-2 py-0.5 text-[10px] font-mono text-zinc-200 focus:outline-none"
                       >
-                        <option value="draft" className="bg-[#1a1a1a]">Draft</option>
-                        <option value="sent" className="bg-[#1a1a1a]">Sent</option>
-                        <option value="paid" className="bg-[#1a1a1a]">Paid</option>
-                        <option value="overdue" className="bg-[#1a1a1a]">Overdue</option>
+                        <option value="draft">Draft</option>
+                        <option value="sent">Sent</option>
+                        <option value="paid">Paid</option>
+                        <option value="overdue">Overdue</option>
                       </select>
                     </td>
-                    <td className="py-3 px-4 text-right space-x-2">
+                    <td className="py-2.5 px-4 text-right space-x-2">
                       <button
                         onClick={() => setPdfPreviewInvoice(inv)}
-                        className="px-2 py-1 rounded bg-[#222222] hover:bg-[#2c2c2c] text-[11px] text-gray-200 transition-colors inline-flex items-center gap-1"
+                        className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 text-[10.5px] text-zinc-200 border border-zinc-800 transition-colors inline-flex items-center gap-1 cursor-pointer font-mono"
                       >
-                        <FileText className="w-3 h-3" /> View PDF
+                        <FileText className="w-3 h-3 text-sky-400" /> View PDF
                       </button>
                       <button
                         onClick={() => deleteInvoice(inv.id)}
-                        className="text-gray-500 hover:text-red-400 p-1"
+                        className="text-zinc-500 hover:text-rose-400 p-1 transition-colors cursor-pointer"
                         title="Delete Invoice"
                       >
                         <Trash2 className="w-3.5 h-3.5 inline" />
@@ -293,7 +319,7 @@ export default function FinancePage() {
                 ))}
                 {invoices.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-gray-500 text-xs">
+                    <td colSpan={7} className="py-12 text-center text-zinc-500 text-xs">
                       No invoices created. Click &quot;Create Invoice&quot; to generate your first invoice.
                     </td>
                   </tr>
@@ -306,12 +332,12 @@ export default function FinancePage() {
 
       {/* 2. Expenses Tab */}
       {activeTab === 'expenses' && (
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">Expense Ledger</h3>
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] overflow-hidden">
+          <div className="p-3.5 border-b border-[#18181f] flex items-center justify-between">
+            <h3 className="text-xs font-bold text-white font-mono uppercase">Operational Expense Ledger</h3>
             <button
               onClick={() => setShowExpenseModal(true)}
-              className="px-3 py-1.5 bg-white text-black font-semibold text-xs rounded-lg hover:opacity-90"
+              className="px-3 py-1 bg-white text-black font-semibold text-xs rounded-md hover:bg-zinc-200 cursor-pointer"
             >
               + Add Expense
             </button>
@@ -319,30 +345,30 @@ export default function FinancePage() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-[#161616] border-b border-[#2a2a2a] text-gray-400 uppercase font-semibold text-[10px]">
+              <thead className="bg-[#0c0c10] border-b border-[#18181f] text-zinc-400 uppercase font-semibold text-[10px] tracking-wider font-mono">
                 <tr>
-                  <th className="py-3 px-4">Expense</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+                  <th className="py-2.5 px-4">Expense Name</th>
+                  <th className="py-2.5 px-4">Category</th>
+                  <th className="py-2.5 px-4">Date</th>
+                  <th className="py-2.5 px-4">Amount</th>
+                  <th className="py-2.5 px-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#262626] text-gray-300">
+              <tbody className="divide-y divide-[#14141c] text-zinc-300">
                 {expenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 font-semibold text-white">{exp.name}</td>
-                    <td className="py-3 px-4">
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-white/5 text-gray-300 border border-white/5">
+                  <tr key={exp.id} className="hover:bg-zinc-900/40 transition-colors">
+                    <td className="py-2.5 px-4 font-semibold text-white">{exp.name}</td>
+                    <td className="py-2.5 px-4">
+                      <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded font-mono bg-zinc-900 text-zinc-300 border border-zinc-800">
                         {exp.category}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-gray-400">{exp.date}</td>
-                    <td className="py-3 px-4 font-bold text-rose-400">{formatCurrency(exp.amount)}</td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">{exp.date}</td>
+                    <td className="py-2.5 px-4 font-bold text-rose-400 font-mono">{formatCurrency(exp.amount)}</td>
+                    <td className="py-2.5 px-4 text-right">
                       <button
                         onClick={() => deleteExpense(exp.id)}
-                        className="text-gray-500 hover:text-red-400"
+                        className="text-zinc-500 hover:text-rose-400 p-1"
                       >
                         <Trash2 className="w-3.5 h-3.5 inline" />
                       </button>
@@ -351,7 +377,7 @@ export default function FinancePage() {
                 ))}
                 {expenses.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-500 text-xs">
+                    <td colSpan={5} className="py-12 text-center text-zinc-500 text-xs">
                       No operational expenses recorded.
                     </td>
                   </tr>
@@ -364,31 +390,36 @@ export default function FinancePage() {
 
       {/* 3. Clients Directory Tab */}
       {activeTab === 'clients' && (
-        <div className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">Client Directory</h3>
+        <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#18181f]">
+            <h3 className="text-xs font-bold text-white font-mono uppercase">Client Directory</h3>
             <button
               onClick={() => setShowClientModal(true)}
-              className="px-3 py-1.5 bg-white text-black font-semibold text-xs rounded-lg hover:opacity-90"
+              className="px-3 py-1 bg-white text-black font-semibold text-xs rounded-md hover:bg-zinc-200 cursor-pointer"
             >
               + Add Client
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {clients.map((c) => (
-              <div key={c.id} className="p-4 rounded-xl bg-[#161616] border border-[#2a2a2a] space-y-2">
+              <div key={c.id} className="p-3.5 rounded-lg bg-[#0d0d11] border border-[#1c1c24] space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="font-bold text-white text-sm">{c.company_name}</div>
-                  <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <div className="font-bold text-white text-xs">{c.company_name}</div>
+                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
                     {c.status}
                   </span>
                 </div>
-                <div className="text-xs text-gray-400">{c.name} • {c.email}</div>
+                <div className="text-[11px] text-zinc-400">{c.name} • {c.email}</div>
+                {c.total_billed !== undefined && (
+                  <div className="text-[10px] text-zinc-400 pt-1 font-mono">
+                    Billed: <strong className="text-zinc-200">{formatCurrency(c.total_billed)}</strong>
+                  </div>
+                )}
               </div>
             ))}
             {clients.length === 0 && (
-              <div className="col-span-full py-8 text-center text-gray-500 text-xs">
+              <div className="col-span-full py-12 text-center text-zinc-500 text-xs">
                 No client accounts created yet.
               </div>
             )}
@@ -398,66 +429,77 @@ export default function FinancePage() {
 
       {/* PDF Generation Preview Modal */}
       {pdfPreviewInvoice && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white text-black rounded-2xl w-full max-w-2xl p-8 space-y-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="flex items-start justify-between border-b pb-4">
-              <div>
-                <h2 className="text-2xl font-black tracking-tight">QONTRO INVOICE</h2>
-                <div className="text-xs text-gray-500">Hyperion Labs Inc • billing@qontro.io</div>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white text-black rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-100">
+            <div id="invoice-print-area" className="p-8 space-y-6 flex-1 overflow-y-auto bg-white text-black font-sans">
+              <div className="flex items-start justify-between border-b border-gray-200 pb-4">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-black font-mono">INVOICE</h2>
+                  <div className="text-xs text-gray-500 font-medium">{currentWorkspace.name}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-black font-mono">{pdfPreviewInvoice.invoice_number}</div>
+                  <div className="text-xs text-gray-500 font-mono">Due: {pdfPreviewInvoice.due_date}</div>
+                </div>
               </div>
-              <div className="text-right">
-                <div className="text-lg font-bold">{pdfPreviewInvoice.invoice_number}</div>
-                <div className="text-xs text-gray-500">Due: {pdfPreviewInvoice.due_date}</div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <div className="text-[9.5px] uppercase font-bold text-gray-400 font-mono">Billed To</div>
+                  <div className="font-bold text-gray-900 mt-1">{pdfPreviewInvoice.client_name}</div>
+                  <div className="text-gray-500 font-mono">{pdfPreviewInvoice.client_email || 'accounts@client.com'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[9.5px] uppercase font-bold text-gray-400 font-mono">Issue Date</div>
+                  <div className="font-semibold text-gray-800 mt-1 font-mono">{pdfPreviewInvoice.issue_date}</div>
+                  <div className="text-[9.5px] uppercase font-bold text-gray-400 mt-2 font-mono">Project</div>
+                  <div className="text-gray-600 font-medium">{pdfPreviewInvoice.project_name}</div>
+                </div>
+              </div>
+
+              <table className="w-full text-left text-xs border border-gray-200 rounded-lg overflow-hidden">
+                <thead className="bg-gray-100 text-gray-700 font-mono text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-3">Description</th>
+                    <th className="py-2.5 px-3 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  <tr>
+                    <td className="py-3 px-3">Engineering, product architecture & milestone sprint for {pdfPreviewInvoice.project_name}</td>
+                    <td className="py-3 px-3 text-right font-bold font-mono">{formatCurrency(pdfPreviewInvoice.amount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex justify-end pt-2">
+                <div className="w-48 space-y-1.5 text-xs text-right">
+                  <div className="flex justify-between text-gray-500 font-mono">
+                    <span>Subtotal:</span>
+                    <span>{formatCurrency(pdfPreviewInvoice.amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-black border-t border-gray-200 pt-1.5 font-mono">
+                    <span>Total Due:</span>
+                    <span>{formatCurrency(pdfPreviewInvoice.amount)}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <div className="font-bold uppercase text-gray-400 text-[10px]">Billed To:</div>
-                <div className="font-bold text-sm">{pdfPreviewInvoice.client_name}</div>
-                <div className="text-gray-600">{pdfPreviewInvoice.client_email}</div>
-              </div>
-              <div className="text-right">
-                <div className="font-bold uppercase text-gray-400 text-[10px]">Project Scope:</div>
-                <div className="font-medium text-sm">{pdfPreviewInvoice.project_name}</div>
-                <div className="text-gray-600">Status: {pdfPreviewInvoice.status.toUpperCase()}</div>
-              </div>
-            </div>
-
-            <table className="w-full text-left text-xs border-t border-b py-2">
-              <thead>
-                <tr className="border-b text-gray-500 text-[10px] uppercase">
-                  <th className="py-2">Description</th>
-                  <th className="py-2 text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="py-3 font-medium">Software Engineering & Product Architecture Sprint</td>
-                  <td className="py-3 text-right font-bold">{formatCurrency(pdfPreviewInvoice.amount)}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div className="flex justify-between items-center text-sm pt-2">
-              <span className="font-bold">Total Due:</span>
-              <span className="text-xl font-extrabold">{formatCurrency(pdfPreviewInvoice.amount)}</span>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="bg-gray-100 p-3.5 border-t border-gray-200 flex items-center justify-between">
               <button
                 onClick={() => setPdfPreviewInvoice(null)}
-                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 text-xs font-semibold hover:bg-gray-300"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 hover:text-black cursor-pointer"
               >
-                Close
+                Close Preview
               </button>
               <button
-                onClick={() => {
-                  window.print();
-                }}
-                className="px-4 py-2 rounded-lg bg-black text-white text-xs font-semibold flex items-center gap-1.5"
+                onClick={handleDownloadPDF}
+                disabled={isGeneratingPdf}
+                className="px-4 py-1.5 rounded-lg bg-black text-white text-xs font-semibold hover:bg-gray-800 flex items-center gap-1.5 cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5" /> Print / Save as PDF
+                <Download className="w-3.5 h-3.5" />
+                {isGeneratingPdf ? 'Rendering PDF...' : 'Download PDF Document'}
               </button>
             </div>
           </div>
@@ -466,89 +508,88 @@ export default function FinancePage() {
 
       {/* New Invoice Modal */}
       {showInvoiceModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#262626] pb-3">
-              <h3 className="text-base font-semibold text-white">Generate Client Invoice</h3>
-              <button onClick={() => setShowInvoiceModal(false)} className="text-gray-400 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0a0a0e] border border-[#1f1f26] rounded-xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between border-b border-[#18181f] pb-3">
+              <h3 className="text-sm font-bold text-white">Create Client Invoice</h3>
+              <button onClick={() => setShowInvoiceModal(false)} className="text-zinc-400 hover:text-white p-0.5">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <form onSubmit={handleCreateInvoice} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1">Client Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Apex Dynamics Corp"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#444444]"
-                  />
-                </div>
+            <form onSubmit={handleCreateInvoice} className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Client Company</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Apex Dynamics Corp"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1">Client Billing Email</label>
-                  <input
-                    type="email"
-                    placeholder="billing@client.com"
-                    value={clientEmail}
-                    onChange={(e) => setClientEmail(e.target.value)}
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#444444]"
-                  />
-                </div>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Client Billing Email</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="billing@apexdynamics.com"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1">Invoice Amount (USD)</label>
+                <div className="space-y-1">
+                  <label className="block text-zinc-300 font-medium">Amount ($ USD)</label>
                   <input
                     type="number"
                     required
                     value={amount}
                     onChange={(e) => setAmount(Number(e.target.value))}
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#444444]"
+                    className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                   />
                 </div>
-
-                <div>
-                  <label className="block text-gray-400 font-medium mb-1">Due Date</label>
+                <div className="space-y-1">
+                  <label className="block text-zinc-300 font-medium">Due Date</label>
                   <input
                     type="date"
+                    required
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#444444]"
+                    className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-gray-400 font-medium mb-1">Related Project</label>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Associated Project</label>
                 <select
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#444444]"
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                 >
                   {projects.map((p) => (
                     <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
-                  {projects.length === 0 && (
-                    <option value="General Milestone">General Milestone</option>
-                  )}
+                  {projects.length === 0 && <option value="General Scope">General Scope</option>}
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-[#262626]">
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#18181f]">
                 <button
                   type="button"
                   onClick={() => setShowInvoiceModal(false)}
-                  className="px-4 py-2 rounded-lg text-gray-400 hover:text-white"
+                  className="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-white text-black font-semibold hover:opacity-90"
+                  className="px-4 py-1.5 rounded-lg bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all"
                 >
                   Dispatch Invoice
                 </button>
@@ -560,64 +601,68 @@ export default function FinancePage() {
 
       {/* New Expense Modal */}
       {showExpenseModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl w-full max-w-sm p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#262626] pb-3">
-              <h3 className="text-base font-semibold text-white">Record Operating Expense</h3>
-              <button onClick={() => setShowExpenseModal(false)} className="text-gray-400 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0a0a0e] border border-[#1f1f26] rounded-xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between border-b border-[#18181f] pb-3">
+              <h3 className="text-sm font-bold text-white">Record Operating Expense</h3>
+              <button onClick={() => setShowExpenseModal(false)} className="text-zinc-400 hover:text-white p-0.5">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <form onSubmit={handleCreateExpense} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-gray-400 mb-1">Expense Name</label>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Expense Description</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. AWS & Supabase Cloud Hosting"
+                  placeholder="e.g. DeepSeek API Inference Tier"
                   value={expenseName}
                   onChange={(e) => setExpenseName(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-400 mb-1">Category</label>
-                <select
-                  value={expenseCategory}
-                  onChange={(e) => setExpenseCategory(e.target.value as any)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
-                >
-                  <option value="software">Software / SaaS</option>
-                  <option value="contractor">Contractor Payout</option>
-                  <option value="payroll">Payroll</option>
-                  <option value="marketing">Marketing & Ads</option>
-                  <option value="office">Office & Infra</option>
-                  <option value="other">Other</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-zinc-300 font-medium">Category</label>
+                  <select
+                    value={expenseCategory}
+                    onChange={(e) => setExpenseCategory(e.target.value as Expense['category'])}
+                    className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
+                  >
+                    <option value="software">Software</option>
+                    <option value="contractor">Contractor</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="payroll">Payroll</option>
+                    <option value="office">Office</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-zinc-300 font-medium">Amount ($ USD)</label>
+                  <input
+                    type="number"
+                    required
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(Number(e.target.value))}
+                    className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-gray-400 mb-1">Amount ($)</label>
-                <input
-                  type="number"
-                  required
-                  value={expenseAmount}
-                  onChange={(e) => setExpenseAmount(Number(e.target.value))}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#18181f]">
                 <button
                   type="button"
                   onClick={() => setShowExpenseModal(false)}
-                  className="px-3 py-1.5 text-gray-400"
+                  className="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-white text-black font-semibold rounded-lg"
+                  className="px-4 py-1.5 rounded-lg bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all"
                 >
                   Save Expense
                 </button>
@@ -629,63 +674,65 @@ export default function FinancePage() {
 
       {/* New Client Modal */}
       {showClientModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl w-full max-w-sm p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#262626] pb-3">
-              <h3 className="text-base font-semibold text-white">Add New Client</h3>
-              <button onClick={() => setShowClientModal(false)} className="text-gray-400 hover:text-white">✕</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0a0a0e] border border-[#1f1f26] rounded-xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between border-b border-[#18181f] pb-3">
+              <h3 className="text-sm font-bold text-white">Add Client Account</h3>
+              <button onClick={() => setShowClientModal(false)} className="text-zinc-400 hover:text-white p-0.5">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-gray-400 mb-1">Company Name</label>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Company Name</label>
                 <input
                   type="text"
                   required
-                  placeholder="Apex Robotics Corp"
+                  placeholder="e.g. Apex Dynamics Corp"
                   value={newClientCompany}
                   onChange={(e) => setNewClientCompany(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-400 mb-1">Contact Person</label>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Primary Contact Person</label>
                 <input
                   type="text"
                   required
-                  placeholder="John Doe"
+                  placeholder="e.g. Marcus Vance"
                   value={newClientName}
                   onChange={(e) => setNewClientName(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-400 mb-1">Billing Email</label>
+              <div className="space-y-1">
+                <label className="block text-zinc-300 font-medium">Billing Email</label>
                 <input
                   type="email"
                   required
-                  placeholder="billing@apex.com"
+                  placeholder="marcus@apexdynamics.com"
                   value={newClientEmail}
                   onChange={(e) => setNewClientEmail(e.target.value)}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white"
+                  className="w-full bg-[#040406] border border-[#18181f] rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-zinc-500 transition-colors"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#18181f]">
                 <button
                   type="button"
                   onClick={() => setShowClientModal(false)}
-                  className="px-3 py-1.5 text-gray-400"
+                  className="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-white text-black font-semibold rounded-lg"
+                  className="px-4 py-1.5 rounded-lg bg-white text-black font-semibold text-xs hover:bg-zinc-200 transition-all"
                 >
-                  Save Client
+                  Create Client
                 </button>
               </div>
             </form>

@@ -48,10 +48,11 @@ export interface Project {
   deadline: string;
   status: ProjectStatus;
   health_score: number; // 0-100
-  total_tasks: number;
-  completed_tasks: number;
+  // total_tasks and completed_tasks are computed from the tasks table, NOT stored
   lead_member_id?: string;
+  archived_at?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
@@ -59,11 +60,14 @@ export type TaskStatus = 'backlog' | 'todo' | 'doing' | 'review' | 'completed' |
 
 export interface TaskComment {
   id: string;
+  workspace_id: string;
   task_id: string;
+  user_id: string;
   author_name: string;
   author_avatar?: string;
   content: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Task {
@@ -177,10 +181,14 @@ export interface AIRecommendation {
   title: string;
   description: string;
   target_task_id?: string;
+  target_member_id?: string;
   recommended_member_id?: string;
   current_member_id?: string;
   match_score?: number;
   reasons: string[];
+  before_state?: string;
+  after_state?: string;
   status: 'pending' | 'approved' | 'dismissed';
   created_at: string;
 }
+

@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Search, Sparkles, Command, ShieldCheck, FolderGit2, CheckSquare, BrainCircuit, CreditCard, X } from 'lucide-react';
+import { Search, Sparkles, ShieldCheck, FolderGit2, CheckSquare, BrainCircuit, CreditCard, X, Command } from 'lucide-react';
 import { useAppStore } from '@/store';
 
 export function Header() {
-  const { currentWorkspace, members, projects, tasks, documents, invoices } = useAppStore();
+  const { members, projects, tasks, documents, invoices } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -25,6 +25,17 @@ export function Header() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Close when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Filter items across all pillars
@@ -47,45 +58,47 @@ export function Header() {
   const totalResults = matchingProjects.length + matchingTasks.length + matchingDocs.length + matchingInvoices.length;
 
   return (
-    <header className="h-14 border-b border-[#222222] bg-[#141414]/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30 font-sans">
+    <header className="h-13 border-b border-[#18181f] bg-[#000000]/90 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30 font-sans">
       {/* Global Command Bar */}
       <div className="relative w-80" ref={searchRef}>
         <div className="relative w-full">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search Qontro (Ctrl+K)..."
+            placeholder="Search cockpit, tasks, SOPs... (⌘K)"
             value={searchQuery}
             onFocus={() => setIsOpen(true)}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setIsOpen(true);
             }}
-            className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg pl-8 pr-8 py-1.5 text-xs text-gray-200 placeholder-gray-400 focus:outline-none focus:border-[#444444] transition-colors"
+            className="w-full bg-[#08080a] border border-[#1f1f26] rounded-lg pl-8 pr-10 py-1.5 text-xs text-zinc-100 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors"
           />
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 text-[9px] text-gray-400 bg-white/5 px-1 py-0.5 rounded border border-white/5 font-mono">
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 text-[9px] text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800 font-mono">
             ⌘K
           </div>
         </div>
 
         {/* Global Search Results Dropdown Modal */}
         {isOpen && searchQuery.trim().length > 0 && (
-          <div className="absolute top-11 left-0 w-96 max-h-96 overflow-y-auto bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl shadow-2xl p-3 space-y-3 z-50 text-xs">
-            <div className="flex items-center justify-between border-b border-[#262626] pb-2 text-gray-400 text-[11px]">
-              <span>Results ({totalResults})</span>
-              <button onClick={() => setIsOpen(false)} className="hover:text-white">✕</button>
+          <div className="absolute top-11 left-0 w-96 max-h-[28rem] overflow-y-auto bg-[#0a0a0d] border border-[#1f1f26] rounded-xl shadow-2xl p-3.5 space-y-3 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2 text-zinc-400 text-[11px]">
+              <span className="font-semibold text-zinc-300 font-mono">RESULTS ({totalResults})</span>
+              <button onClick={() => setIsOpen(false)} className="hover:text-white p-0.5">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {totalResults === 0 ? (
-              <div className="py-6 text-center text-gray-400 text-[11px]">
-                No matching projects, tasks, SOPs, or invoices found.
+              <div className="py-6 text-center text-zinc-400 text-[11px]">
+                No matching projects, tasks, documents, or invoices.
               </div>
             ) : (
-              <div className="space-y-3 divide-y divide-[#262626]">
+              <div className="space-y-2.5 divide-y divide-zinc-800/60">
                 {/* Projects */}
                 {matchingProjects.length > 0 && (
-                  <div className="space-y-1.5 pt-1.5 first:pt-0">
-                    <div className="text-[10px] font-bold uppercase text-emerald-400 flex items-center gap-1">
+                  <div className="space-y-1 pt-1.5 first:pt-0">
+                    <div className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 font-mono">
                       <FolderGit2 className="w-3 h-3" /> Projects
                     </div>
                     {matchingProjects.map((p) => (
@@ -93,10 +106,10 @@ export function Header() {
                         key={p.id}
                         href="/projects"
                         onClick={() => setIsOpen(false)}
-                        className="block p-1.5 rounded hover:bg-[#222222] text-gray-200 hover:text-white"
+                        className="block p-2 rounded-lg hover:bg-zinc-800/50 text-zinc-200 hover:text-white transition-colors"
                       >
-                        <div className="font-semibold">{p.name}</div>
-                        <div className="text-[10px] text-gray-400">{p.client_name} • {p.health_score}% health</div>
+                        <div className="font-semibold text-xs">{p.name}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">{p.client_name} · {p.health_score}% health</div>
                       </Link>
                     ))}
                   </div>
@@ -104,19 +117,19 @@ export function Header() {
 
                 {/* Tasks */}
                 {matchingTasks.length > 0 && (
-                  <div className="space-y-1.5 pt-1.5">
-                    <div className="text-[10px] font-bold uppercase text-blue-400 flex items-center gap-1">
-                      <CheckSquare className="w-3 h-3" /> Tasks
+                  <div className="space-y-1 pt-2">
+                    <div className="text-[9.5px] font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5 font-mono">
+                      <CheckSquare className="w-3 h-3" /> Execution Tasks
                     </div>
                     {matchingTasks.map((t) => (
                       <Link
                         key={t.id}
                         href="/tasks"
                         onClick={() => setIsOpen(false)}
-                        className="block p-1.5 rounded hover:bg-[#222222] text-gray-200 hover:text-white"
+                        className="block p-2 rounded-lg hover:bg-zinc-800/50 text-zinc-200 hover:text-white transition-colors"
                       >
-                        <div className="font-semibold">{t.title}</div>
-                        <div className="text-[10px] text-gray-400">{t.project_name} • {t.status.toUpperCase()}</div>
+                        <div className="font-semibold text-xs">{t.title}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">{t.project_name} · {t.status}</div>
                       </Link>
                     ))}
                   </div>
@@ -124,8 +137,8 @@ export function Header() {
 
                 {/* Documents */}
                 {matchingDocs.length > 0 && (
-                  <div className="space-y-1.5 pt-1.5">
-                    <div className="text-[10px] font-bold uppercase text-purple-400 flex items-center gap-1">
+                  <div className="space-y-1 pt-2">
+                    <div className="text-[9.5px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 font-mono">
                       <BrainCircuit className="w-3 h-3" /> Company Memory
                     </div>
                     {matchingDocs.map((d) => (
@@ -133,10 +146,10 @@ export function Header() {
                         key={d.id}
                         href="/memory"
                         onClick={() => setIsOpen(false)}
-                        className="block p-1.5 rounded hover:bg-[#222222] text-gray-200 hover:text-white"
+                        className="block p-2 rounded-lg hover:bg-zinc-800/50 text-zinc-200 hover:text-white transition-colors"
                       >
-                        <div className="font-semibold">{d.title}</div>
-                        <div className="text-[10px] text-gray-400">{d.category} • {d.type.toUpperCase()}</div>
+                        <div className="font-semibold text-xs">{d.title}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">{d.category} · {d.type}</div>
                       </Link>
                     ))}
                   </div>
@@ -144,19 +157,19 @@ export function Header() {
 
                 {/* Invoices */}
                 {matchingInvoices.length > 0 && (
-                  <div className="space-y-1.5 pt-1.5">
-                    <div className="text-[10px] font-bold uppercase text-amber-400 flex items-center gap-1">
-                      <CreditCard className="w-3 h-3" /> Invoices
+                  <div className="space-y-1 pt-2">
+                    <div className="text-[9.5px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5 font-mono">
+                      <CreditCard className="w-3 h-3" /> Money Flow
                     </div>
                     {matchingInvoices.map((i) => (
                       <Link
                         key={i.id}
                         href="/finance"
                         onClick={() => setIsOpen(false)}
-                        className="block p-1.5 rounded hover:bg-[#222222] text-gray-200 hover:text-white"
+                        className="block p-2 rounded-lg hover:bg-zinc-800/50 text-zinc-200 hover:text-white transition-colors"
                       >
-                        <div className="font-semibold">{i.invoice_number} ({i.client_name})</div>
-                        <div className="text-[10px] text-gray-400">${i.amount} • {i.status.toUpperCase()}</div>
+                        <div className="font-semibold text-xs">{i.invoice_number} ({i.client_name})</div>
+                        <div className="text-[10px] text-zinc-400 font-mono">${i.amount} · {i.status}</div>
                       </Link>
                     ))}
                   </div>
@@ -168,28 +181,29 @@ export function Header() {
       </div>
 
       {/* Founder Status & Actions */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1e1e1e] border border-[#2a2a2a] text-[11px] text-gray-300">
-          <Sparkles className="w-3 h-3 text-amber-400" />
-          <span>DeepSeek Cloud Active</span>
+      <div className="flex items-center gap-3.5">
+        <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#08080a] border border-[#1f1f26] text-xs text-zinc-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+          <span className="font-mono text-[11px] text-zinc-300">AI Engine Ready</span>
         </div>
 
-        <div className="h-3.5 w-[1px] bg-[#2a2a2a]"></div>
+        <div className="h-3.5 w-[1px] bg-zinc-800"></div>
 
         {/* Founder Avatar & Badge */}
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-[#262626] border border-[#383838] flex items-center justify-center text-xs font-semibold text-white">
+          <div className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[11px] font-bold text-white font-mono">
             {founder?.name.charAt(0)}
           </div>
           <div className="text-left hidden md:block">
-            <div className="text-xs font-medium text-gray-200 flex items-center gap-1">
+            <div className="text-xs font-semibold text-white flex items-center gap-1">
               {founder?.name}
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
             </div>
-            <div className="text-[10px] text-gray-400">{founder?.designation}</div>
+            <div className="text-[9.5px] text-zinc-400 font-mono">{founder?.designation}</div>
           </div>
         </div>
       </div>
     </header>
   );
 }
+
