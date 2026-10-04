@@ -29,6 +29,7 @@ contro/
 docs/
 /*.md
 !/README.md
+!/qontro-build.md
 !documentation/*.md
 qontro-final-checklist.md
 *.sql.backup
