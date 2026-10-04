@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import {
   Workspace,
   WorkspaceMember,
@@ -26,6 +26,10 @@ import {
  * They must be computed by the caller from the tasks array or project_task_counts view.
  */
 export class QontroSupabaseService {
+  static isConfigured(): boolean {
+    return isSupabaseConfigured();
+  }
+
   private static getClient() {
     return createClient();
   }

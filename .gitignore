@@ -27,7 +27,9 @@ yarn-error.log*
 # Isolated / Non-product Assets
 contro/
 docs/
-*.md
-!README.md
+/*.md
+!/README.md
+!documentation/*.md
 qontro-final-checklist.md
 *.sql.backup
+

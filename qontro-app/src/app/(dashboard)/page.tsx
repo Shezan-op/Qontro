@@ -35,18 +35,55 @@ export default function CommandCockpitPage() {
     dismissAIRecommendation 
   } = useAppStore();
 
-  // Metrics computation
-  const activeProjects = projects.filter((p) => p.status === 'active' || p.status === 'warning' || p.status === 'critical');
-  const atRiskProjects = projects.filter((p) => p.status === 'warning' || p.status === 'critical');
-  const urgentTasks = tasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed');
-  const overloadedMembers = members.filter((m) => m.workload_percentage >= 85);
-  
-  const pendingInvoices = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue');
-  const totalPendingCash = pendingInvoices.reduce((acc, curr) => acc + curr.amount, 0);
-  const overdueCash = invoices.filter((i) => i.status === 'overdue').reduce((acc, curr) => acc + curr.amount, 0);
+  // Metrics computation memoized for high render performance
+  const {
+    activeProjects,
+    atRiskProjects,
+    urgentTasks,
+    overloadedMembers,
+    totalPendingCash,
+    overdueCash,
+    pendingRecs,
+    hasZeroProjects,
+    projectTaskStats,
+  } = React.useMemo(() => {
+    const activePrjs = projects.filter((p) => p.status === 'active' || p.status === 'warning' || p.status === 'critical');
+    const atRiskPrjs = projects.filter((p) => p.status === 'warning' || p.status === 'critical');
+    const urgTasks = tasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed');
+    const overMembers = members.filter((m) => m.workload_percentage >= 85);
+    
+    const pendingInvs = invoices.filter((i) => i.status === 'sent' || i.status === 'overdue');
+    const pendingCash = pendingInvs.reduce((acc, curr) => acc + curr.amount, 0);
+    const overdueC = invoices.filter((i) => i.status === 'overdue').reduce((acc, curr) => acc + curr.amount, 0);
 
-  const pendingRecs = aiRecommendations.filter((r) => r.status === 'pending');
-  const hasZeroProjects = projects.length === 0;
+    const recs = aiRecommendations.filter((r) => r.status === 'pending');
+    const zeroProjects = projects.length === 0;
+
+    // Single-pass O(N) map of tasks by project ID for fast lookup
+    const stats: Record<string, { total: number; completed: number }> = {};
+    for (const t of tasks) {
+      if (!t.project_id) continue;
+      if (!stats[t.project_id]) {
+        stats[t.project_id] = { total: 0, completed: 0 };
+      }
+      stats[t.project_id].total += 1;
+      if (t.status === 'completed') {
+        stats[t.project_id].completed += 1;
+      }
+    }
+
+    return {
+      activeProjects: activePrjs,
+      atRiskProjects: atRiskPrjs,
+      urgentTasks: urgTasks,
+      overloadedMembers: overMembers,
+      totalPendingCash: pendingCash,
+      overdueCash: overdueC,
+      pendingRecs: recs,
+      hasZeroProjects: zeroProjects,
+      projectTaskStats: stats,
+    };
+  }, [projects, tasks, members, invoices, aiRecommendations]);
 
   return (
     <div className="space-y-6 font-sans">
@@ -257,9 +294,8 @@ export default function CommandCockpitPage() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
                         {(() => {
-                          const prjTasks = tasks.filter(t => t.project_id === project.id);
-                          const done = prjTasks.filter(t => t.status === 'completed').length;
-                          return <span>TASKS: {done}/{prjTasks.length}</span>;
+                          const stat = projectTaskStats[project.id] || { total: 0, completed: 0 };
+                          return <span>TASKS: {stat.completed}/{stat.total}</span>;
                         })()}
                         <span className="text-zinc-300 font-bold">{project.health_score}% HEALTH</span>
                       </div>
