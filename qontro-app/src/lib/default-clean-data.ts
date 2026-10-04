@@ -14,10 +14,10 @@ import {
 } from '@/types';
 
 export const DEFAULT_CLEAN_WORKSPACE: Workspace = {
-  id: 'ws_prod_01',
+  id: '00000000-0000-4000-a000-000000000001',
   name: 'My Organization',
   slug: 'my-org',
-  owner_id: 'usr_founder',
+  owner_id: '00000000-0000-4000-a000-000000000002',
   currency: 'USD',
   timezone: 'UTC+05:30 (IST)',
   created_at: new Date().toISOString(),
@@ -25,9 +25,9 @@ export const DEFAULT_CLEAN_WORKSPACE: Workspace = {
 
 export const DEFAULT_CLEAN_MEMBERS: WorkspaceMember[] = [
   {
-    id: 'mem_founder',
-    workspace_id: 'ws_prod_01',
-    user_id: 'usr_founder',
+    id: '00000000-0000-4000-a000-000000000003',
+    workspace_id: '00000000-0000-4000-a000-000000000001',
+    user_id: '00000000-0000-4000-a000-000000000002',
     name: 'Founder & Admin',
     email: 'admin@organization.com',
     role: 'owner',

@@ -19,6 +19,7 @@ import {
 import { useAppStore } from '@/store';
 import { Invoice, InvoiceStatus, Expense, Client } from '@/types';
 import { formatCurrency, cn } from '@/lib/utils';
+import { QontroSupabaseService } from '@/services/supabaseService';
 
 export default function FinancePage() {
   const { 
@@ -65,13 +66,15 @@ export default function FinancePage() {
   const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
   const netProfitEstimate = totalSettledRevenue - totalExpenses;
 
-  const handleCreateInvoice = (e: React.FormEvent) => {
+  const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim()) return;
 
+    const invoiceNumber = await QontroSupabaseService.generateInvoiceNumber(currentWorkspace.id);
+
     addInvoice({
       workspace_id: currentWorkspace.id,
-      invoice_number: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      invoice_number: invoiceNumber,
       client_name: clientName,
       client_email: clientEmail,
       amount: Number(amount),

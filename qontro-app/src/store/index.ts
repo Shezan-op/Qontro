@@ -13,7 +13,10 @@ import {
   Expense,
   ActivityLog,
   TaskHistory,
-  TaskComment
+  TaskComment,
+  Invitation,
+  AppNotification,
+  InvoiceStatus,
 } from '@/types';
 import {
   DEFAULT_CLEAN_WORKSPACE,
@@ -27,28 +30,14 @@ import {
   DEFAULT_CLEAN_CLIENTS,
   DEFAULT_CLEAN_EXPENSES,
   DEFAULT_CLEAN_ACTIVITY_LOGS,
-  DEFAULT_CLEAN_TASK_HISTORIES
+  DEFAULT_CLEAN_TASK_HISTORIES,
 } from '@/lib/default-clean-data';
 import {
-  ENABLE_MOCK_PROFILE,
-  LEADLINKED_WORKSPACE,
-  LEADLINKED_MEMBERS,
-  LEADLINKED_PROJECTS,
-  LEADLINKED_TASKS,
-  LEADLINKED_SKILLS,
-  LEADLINKED_INVOICES,
-  LEADLINKED_EXPENSES,
-  LEADLINKED_DOCUMENTS,
-  LEADLINKED_AI_RECOMMENDATIONS,
-  LEADLINKED_CLIENTS,
-  LEADLINKED_ACTIVITY_LOGS,
-  LEADLINKED_TASK_HISTORIES,
-} from '@/lib/mock-profile';
-import { QontroSupabaseService } from '@/services/supabaseService';
+  QontroSupabaseService,
+  calculateMemberWorkload,
+  calculateProjectHealth,
+} from '@/services/supabaseService';
 
-/**
- * Generate a UUID using Web Crypto API.
- */
 function newId(): string {
   return crypto.randomUUID();
 }
@@ -59,7 +48,7 @@ interface LoadingState {
   error: string | null;
 }
 
-interface AppState {
+export interface AppState {
   currentWorkspace: Workspace;
   workspaces: Workspace[];
   members: WorkspaceMember[];
@@ -73,6 +62,8 @@ interface AppState {
   documents: Document[];
   activityLogs: ActivityLog[];
   aiRecommendations: AIRecommendation[];
+  invitations: Invitation[];
+  notifications: AppNotification[];
   loadingState: LoadingState;
 
   // Data loading (DB -> Store)
@@ -80,44 +71,49 @@ interface AppState {
 
   // Workspace Actions
   setWorkspace: (workspace: Workspace) => void;
-  createWorkspace: (name: string, currency?: string) => Promise<void>;
+  createWorkspace: (name: string, currency?: string) => Promise<Workspace | null>;
 
   // Tasks Actions
-  addTask: (task: Omit<Task, 'id' | 'created_at'>) => void;
-  deleteTask: (taskId: string) => void;
-  updateTaskStatus: (taskId: string, status: TaskStatus) => void;
-  assignTask: (taskId: string, memberId: string) => void;
-  addTaskComment: (taskId: string, content: string, authorName?: string) => void;
+  addTask: (task: Omit<Task, 'id' | 'created_at'>) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
+  assignTask: (taskId: string, memberId: string) => Promise<void>;
+  addTaskComment: (taskId: string, content: string, authorName?: string) => Promise<void>;
 
   // Projects Actions
-  addProject: (project: Omit<Project, 'id' | 'created_at' | 'health_score'>) => void;
-  deleteProject: (projectId: string) => void;
+  addProject: (project: Omit<Project, 'id' | 'created_at' | 'health_score'>) => Promise<void>;
+  updateProject: (projectId: string, patch: Partial<Omit<Project, 'id' | 'created_at' | 'workspace_id'>>) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
 
   // Clients Actions
-  addClient: (client: Omit<Client, 'id' | 'created_at' | 'total_billed'>) => void;
-  deleteClient: (clientId: string) => void;
+  addClient: (client: Omit<Client, 'id' | 'created_at' | 'total_billed'>) => Promise<void>;
+  deleteClient: (clientId: string) => Promise<void>;
 
   // Invoices & Expenses
-  addInvoice: (invoice: Omit<Invoice, 'id'>) => void;
-  deleteInvoice: (invoiceId: string) => void;
-  updateInvoiceStatus: (invoiceId: string, status: Invoice['status']) => void;
-  addExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => void;
-  deleteExpense: (expenseId: string) => void;
+  addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<void>;
+  deleteInvoice: (invoiceId: string) => Promise<void>;
+  updateInvoiceStatus: (invoiceId: string, status: InvoiceStatus) => Promise<void>;
+  addExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => Promise<void>;
+  deleteExpense: (expenseId: string) => Promise<void>;
 
   // Company Memory Documents
-  addDocument: (doc: Omit<Document, 'id' | 'updated_at'>) => void;
-  deleteDocument: (docId: string) => void;
-  updateDocument: (id: string, title: string, content: string) => void;
+  addDocument: (doc: Omit<Document, 'id' | 'updated_at'>) => Promise<void>;
+  deleteDocument: (docId: string) => Promise<void>;
+  updateDocument: (id: string, title: string, content: string) => Promise<void>;
+  duplicateDocument: (docId: string) => Promise<void>;
 
-  // Members & Skills
-  addMember: (member: Omit<WorkspaceMember, 'id' | 'joined_at'>) => void;
-  deleteMember: (memberId: string) => void;
-  addSkill: (skill: Omit<Skill, 'id'>) => void;
+  // Members, Invitations & Skills
+  addMember: (member: Omit<WorkspaceMember, 'id' | 'joined_at'>) => Promise<void>;
+  updateMember: (memberId: string, patch: Partial<Omit<WorkspaceMember, 'id' | 'workspace_id' | 'joined_at'>>) => Promise<void>;
+  deleteMember: (memberId: string) => Promise<void>;
+  addInvitation: (invitation: Omit<Invitation, 'id' | 'created_at' | 'status'>) => Promise<void>;
+  cancelInvitation: (invitationId: string) => Promise<void>;
+  addSkill: (skill: Omit<Skill, 'id'>) => Promise<void>;
 
   // AI Actions
-  approveAIRecommendation: (recommendationId: string) => void;
-  dismissAIRecommendation: (recommendationId: string) => void;
-  generateAIRecommendation: (rec: Omit<AIRecommendation, 'id' | 'created_at' | 'status'>) => void;
+  approveAIRecommendation: (recommendationId: string) => Promise<void>;
+  dismissAIRecommendation: (recommendationId: string) => Promise<void>;
+  generateAIRecommendation: (rec: Omit<AIRecommendation, 'id' | 'created_at' | 'status'>) => Promise<void>;
 
   // Activity Logging & Cleanup
   logActivity: (log: Omit<ActivityLog, 'id' | 'created_at'>) => void;
@@ -125,24 +121,26 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  currentWorkspace: ENABLE_MOCK_PROFILE ? LEADLINKED_WORKSPACE : DEFAULT_CLEAN_WORKSPACE,
-  workspaces: [ENABLE_MOCK_PROFILE ? LEADLINKED_WORKSPACE : DEFAULT_CLEAN_WORKSPACE],
-  members: ENABLE_MOCK_PROFILE ? LEADLINKED_MEMBERS : DEFAULT_CLEAN_MEMBERS,
-  clients: ENABLE_MOCK_PROFILE ? LEADLINKED_CLIENTS : DEFAULT_CLEAN_CLIENTS,
-  projects: ENABLE_MOCK_PROFILE ? LEADLINKED_PROJECTS : DEFAULT_CLEAN_PROJECTS,
-  tasks: ENABLE_MOCK_PROFILE ? LEADLINKED_TASKS : DEFAULT_CLEAN_TASKS,
-  taskHistories: ENABLE_MOCK_PROFILE ? LEADLINKED_TASK_HISTORIES : DEFAULT_CLEAN_TASK_HISTORIES,
-  skills: ENABLE_MOCK_PROFILE ? LEADLINKED_SKILLS : DEFAULT_CLEAN_SKILLS,
-  invoices: ENABLE_MOCK_PROFILE ? LEADLINKED_INVOICES : DEFAULT_CLEAN_INVOICES,
-  expenses: ENABLE_MOCK_PROFILE ? LEADLINKED_EXPENSES : DEFAULT_CLEAN_EXPENSES,
-  documents: ENABLE_MOCK_PROFILE ? LEADLINKED_DOCUMENTS : DEFAULT_CLEAN_DOCUMENTS,
-  activityLogs: ENABLE_MOCK_PROFILE ? LEADLINKED_ACTIVITY_LOGS : DEFAULT_CLEAN_ACTIVITY_LOGS,
-  aiRecommendations: ENABLE_MOCK_PROFILE ? LEADLINKED_AI_RECOMMENDATIONS : DEFAULT_CLEAN_AI_RECOMMENDATIONS,
+  currentWorkspace: DEFAULT_CLEAN_WORKSPACE,
+  workspaces: [DEFAULT_CLEAN_WORKSPACE],
+  members: DEFAULT_CLEAN_MEMBERS,
+  clients: DEFAULT_CLEAN_CLIENTS,
+  projects: DEFAULT_CLEAN_PROJECTS,
+  tasks: DEFAULT_CLEAN_TASKS,
+  taskHistories: DEFAULT_CLEAN_TASK_HISTORIES,
+  skills: DEFAULT_CLEAN_SKILLS,
+  invoices: DEFAULT_CLEAN_INVOICES,
+  expenses: DEFAULT_CLEAN_EXPENSES,
+  documents: DEFAULT_CLEAN_DOCUMENTS,
+  activityLogs: DEFAULT_CLEAN_ACTIVITY_LOGS,
+  aiRecommendations: DEFAULT_CLEAN_AI_RECOMMENDATIONS,
+  invitations: [],
+  notifications: [],
   loadingState: { isLoading: false, isLoaded: true, error: null },
 
   /**
-   * Load all workspace data from Supabase in parallel across all 13 domains.
-   * DATABASE is the source of truth -- Zustand is the local optimistic cache.
+   * Load all workspace data from Supabase in parallel across all core domains.
+   * DATABASE is the authoritative source of truth.
    */
   loadWorkspaceData: async (workspaceId: string) => {
     set({ loadingState: { isLoading: true, isLoaded: false, error: null } });
@@ -160,6 +158,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         taskHistories,
         activityLogs,
         aiRecommendations,
+        invitations,
       ] = await Promise.all([
         QontroSupabaseService.fetchProjects(workspaceId).catch(() => []),
         QontroSupabaseService.fetchTasks(workspaceId).catch(() => []),
@@ -172,20 +171,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         QontroSupabaseService.fetchTaskHistory(workspaceId).catch(() => []),
         QontroSupabaseService.fetchActivityLogs(workspaceId).catch(() => []),
         QontroSupabaseService.fetchAIRecommendations(workspaceId).catch(() => []),
+        QontroSupabaseService.fetchInvitations(workspaceId).catch(() => []),
       ]);
 
+      // Calculate real dynamic workload for every member
+      const membersWithWorkload = members.map((m) => ({
+        ...m,
+        workload_percentage: calculateMemberWorkload(m.id, tasks),
+      }));
+
+      // Calculate real dynamic health score for every project
+      const projectsWithHealth = projects.map((p) => ({
+        ...p,
+        health_score: calculateProjectHealth(p.id, tasks),
+      }));
+
       set({
-        projects,
+        projects: projectsWithHealth,
         tasks,
         invoices,
         documents,
-        members,
+        members: membersWithWorkload,
         skills,
         clients,
         expenses,
-        taskHistories: taskHistories.length > 0 ? taskHistories : get().taskHistories,
-        activityLogs: activityLogs.length > 0 ? activityLogs : get().activityLogs,
-        aiRecommendations: aiRecommendations.length > 0 ? aiRecommendations : get().aiRecommendations,
+        taskHistories,
+        activityLogs,
+        aiRecommendations,
+        invitations,
         loadingState: { isLoading: false, isLoaded: true, error: null },
       });
     } catch (err: unknown) {
@@ -194,37 +207,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  setWorkspace: (workspace) => set({ currentWorkspace: workspace }),
-
-  createWorkspace: async (name, currency = 'USD') => {
-    try {
-      const newWs = await QontroSupabaseService.createWorkspace(name, currency);
-      if (newWs) {
-        set((state) => ({
-          workspaces: [...state.workspaces.filter((w) => w.id !== newWs.id), newWs],
-          currentWorkspace: newWs,
-        }));
-        await get().loadWorkspaceData(newWs.id);
-        return;
-      }
-    } catch (err) {
-      console.warn('[Store] createWorkspace DB error, using optimistic local state:', err);
+  setWorkspace: (workspace) => {
+    // Purge stale tenant-bound state when switching workspace
+    if (get().currentWorkspace?.id !== workspace.id) {
+      get().clearWorkspaceData();
     }
+    set({ currentWorkspace: workspace });
+  },
 
-    // Local fallback
-    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const fallbackWs: Workspace = {
-      id: newId(),
-      name,
-      slug: slug || ('ws-' + newId().substring(0, 8)),
-      owner_id: 'usr_founder',
-      currency,
-      created_at: new Date().toISOString(),
-    };
-    set((state) => ({
-      workspaces: [...state.workspaces, fallbackWs],
-      currentWorkspace: fallbackWs,
-    }));
+  createWorkspace: async (name: string, currency: string = 'USD') => {
+    const newWs = await QontroSupabaseService.createWorkspace(name, currency);
+    if (newWs) {
+      set((state) => ({
+        workspaces: [...state.workspaces.filter((w) => w.id !== newWs.id), newWs],
+        currentWorkspace: newWs,
+      }));
+      await get().loadWorkspaceData(newWs.id);
+      return newWs;
+    }
+    return null;
   },
 
   logActivity: (newLog) => {
@@ -240,11 +241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
 
-  /**
-   * addTask: Passes client UUID to Supabase so child taskHistories and task_comments
-   * maintain 100% foreign key relational integrity.
-   */
-  addTask: (newTask) => {
+  addTask: async (newTask) => {
     const id = newId();
     const task: Task = {
       ...newTask,
@@ -252,6 +249,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       created_at: new Date().toISOString(),
       comments: [],
     };
+
+    const prevTasks = get().tasks;
+    const prevProjects = get().projects;
+    const prevMembers = get().members;
+
+    const updatedTasks = [task, ...prevTasks];
+    const updatedMembers = prevMembers.map((m) => ({
+      ...m,
+      workload_percentage: calculateMemberWorkload(m.id, updatedTasks),
+    }));
+    const updatedProjects = prevProjects.map((p) =>
+      p.id === task.project_id
+        ? { ...p, health_score: calculateProjectHealth(p.id, updatedTasks) }
+        : p
+    );
 
     const historyEntry: TaskHistory = {
       id: newId(),
@@ -264,7 +276,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     set((state) => ({
-      tasks: [task, ...state.tasks],
+      tasks: updatedTasks,
+      members: updatedMembers,
+      projects: updatedProjects,
       taskHistories: [historyEntry, ...state.taskHistories],
     }));
 
@@ -275,32 +289,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Founder / Admin',
     });
 
-    // 1. Persist task preserving client id
-    QontroSupabaseService.createTask({ ...newTask, id })
-      .then((saved) => {
-        if (saved) {
-          set((state) => ({
-            tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...saved } : t)),
-          }));
-        }
-      })
-      .catch((err) => console.error('[Store] addTask DB error:', err));
-
-    // 2. Persist task history
-    QontroSupabaseService.createTaskHistory({
-      workspace_id: task.workspace_id,
-      task_id: task.id,
-      action: 'Task created',
-      actor_name: 'Founder / Admin',
-      new_value: task.title,
-    }).catch((err) => console.warn('[Store] createTaskHistory DB warning:', err.message));
+    try {
+      const saved = await QontroSupabaseService.createTask({ ...newTask, id });
+      if (saved) {
+        set((state) => ({
+          tasks: state.tasks.map((t) => (t.id === id ? { ...t, ...saved } : t)),
+        }));
+      }
+      await QontroSupabaseService.createTaskHistory({
+        workspace_id: task.workspace_id,
+        task_id: task.id,
+        action: 'Task created',
+        actor_name: 'Founder / Admin',
+        new_value: task.title,
+      }).catch(() => null);
+    } catch (err: unknown) {
+      set({
+        tasks: prevTasks,
+        members: prevMembers,
+        projects: prevProjects,
+      });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addTask rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteTask: (taskId) => {
-    const target = get().tasks.find((t) => t.id === taskId);
-    set((state) => ({
-      tasks: state.tasks.filter((t) => t.id !== taskId),
+  deleteTask: async (taskId) => {
+    const prevTasks = get().tasks;
+    const prevProjects = get().projects;
+    const prevMembers = get().members;
+    const target = prevTasks.find((t) => t.id === taskId);
+
+    const updatedTasks = prevTasks.filter((t) => t.id !== taskId);
+    const updatedMembers = prevMembers.map((m) => ({
+      ...m,
+      workload_percentage: calculateMemberWorkload(m.id, updatedTasks),
     }));
+    const updatedProjects = prevProjects.map((p) =>
+      target && p.id === target.project_id
+        ? { ...p, health_score: calculateProjectHealth(p.id, updatedTasks) }
+        : p
+    );
+
+    set({
+      tasks: updatedTasks,
+      members: updatedMembers,
+      projects: updatedProjects,
+    });
+
     if (target) {
       get().logActivity({
         workspace_id: target.workspace_id,
@@ -310,19 +347,53 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     }
 
-    QontroSupabaseService.deleteTask(taskId).catch((err) =>
-      console.error('[Store] deleteTask DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.deleteTask(taskId);
+    } catch (err: unknown) {
+      set({
+        tasks: prevTasks,
+        members: prevMembers,
+        projects: prevProjects,
+      });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteTask rollback:', msg);
+      throw err;
+    }
   },
 
-  updateTaskStatus: (taskId, status) => {
+  updateTaskStatus: async (taskId, status) => {
     const targetTask = get().tasks.find((t) => t.id === taskId);
-    const prevStatus = targetTask?.status;
+    if (!targetTask) return;
+
+    const prevTasks = get().tasks;
+    const prevProjects = get().projects;
+    const prevMembers = get().members;
+    const prevStatus = targetTask.status;
+
+    const updatedTasks = prevTasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            status,
+            completed_at: status === 'completed' ? new Date().toISOString() : undefined,
+          }
+        : t
+    );
+
+    const updatedMembers = prevMembers.map((m) => ({
+      ...m,
+      workload_percentage: calculateMemberWorkload(m.id, updatedTasks),
+    }));
+    const updatedProjects = prevProjects.map((p) =>
+      p.id === targetTask.project_id
+        ? { ...p, health_score: calculateProjectHealth(p.id, updatedTasks) }
+        : p
+    );
 
     const historyEntry: TaskHistory = {
       id: newId(),
       task_id: taskId,
-      workspace_id: targetTask?.workspace_id,
+      workspace_id: targetTask.workspace_id,
       action: 'Status changed',
       actor_name: 'Founder / Member',
       previous_value: prevStatus,
@@ -331,90 +402,118 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     set((state) => ({
-      tasks: state.tasks.map((t) => {
-        if (t.id === taskId) {
-          return {
-            ...t,
-            status,
-            completed_at: status === 'completed' ? new Date().toISOString() : undefined,
-          };
-        }
-        return t;
-      }),
+      tasks: updatedTasks,
+      members: updatedMembers,
+      projects: updatedProjects,
       taskHistories: [historyEntry, ...state.taskHistories],
     }));
 
-    if (targetTask) {
-      get().logActivity({
-        workspace_id: targetTask.workspace_id,
-        type: 'task',
-        action: 'Moved task "' + targetTask.title + '" to ' + status.toUpperCase(),
-        actor_name: 'Team Member',
-      });
-    }
+    get().logActivity({
+      workspace_id: targetTask.workspace_id,
+      type: 'task',
+      action: `Moved task "${targetTask.title}" to ${status.toUpperCase()}`,
+      actor_name: 'Team Member',
+    });
 
-    QontroSupabaseService.updateTaskStatus(taskId, status).catch((err) =>
-      console.error('[Store] updateTaskStatus DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.updateTaskStatus(taskId, status);
 
-    if (targetTask) {
-      QontroSupabaseService.createTaskHistory({
+      // Rule 21: Auto-update skill verification on task completion
+      if (status === 'completed' && targetTask.assigned_to) {
+        const skillsList = targetTask.required_skills || [];
+        if (skillsList.length > 0) {
+          await QontroSupabaseService.updateSkillVerificationOnTaskComplete(
+            targetTask.workspace_id,
+            targetTask.assigned_to,
+            skillsList
+          ).catch(() => null);
+
+          const refreshedSkills = await QontroSupabaseService.fetchSkills(targetTask.workspace_id).catch(() => []);
+          if (refreshedSkills.length > 0) {
+            set({ skills: refreshedSkills });
+          }
+        }
+      }
+
+      await QontroSupabaseService.createTaskHistory({
         workspace_id: targetTask.workspace_id,
         task_id: taskId,
         action: 'Status changed',
         actor_name: 'Founder / Member',
         previous_value: prevStatus,
         new_value: status,
-      }).catch((err) => console.warn('[Store] updateTaskStatus history DB warning:', err.message));
+      }).catch(() => null);
+    } catch (err: unknown) {
+      set({
+        tasks: prevTasks,
+        members: prevMembers,
+        projects: prevProjects,
+      });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] updateTaskStatus rollback:', msg);
+      throw err;
     }
   },
 
-  assignTask: (taskId, memberId) => {
-    const member = get().members.find((m) => m.id === memberId);
+  assignTask: async (taskId, memberId) => {
     const targetTask = get().tasks.find((t) => t.id === taskId);
+    if (!targetTask) return;
+
+    const prevTasks = get().tasks;
+    const prevMembers = get().members;
+    const member = prevMembers.find((m) => m.id === memberId);
+
+    const updatedTasks = prevTasks.map((t) =>
+      t.id === taskId ? { ...t, assigned_to: memberId } : t
+    );
+    const updatedMembers = prevMembers.map((m) => ({
+      ...m,
+      workload_percentage: calculateMemberWorkload(m.id, updatedTasks),
+    }));
 
     const historyEntry: TaskHistory = {
       id: newId(),
       task_id: taskId,
-      workspace_id: targetTask?.workspace_id,
+      workspace_id: targetTask.workspace_id,
       action: 'Reassigned',
       actor_name: 'Founder',
-      previous_value: targetTask?.assigned_to || 'Unassigned',
+      previous_value: targetTask.assigned_to || 'Unassigned',
       new_value: member ? member.name : (memberId || 'Unassigned'),
       created_at: new Date().toISOString(),
     };
 
     set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, assigned_to: memberId } : t)),
+      tasks: updatedTasks,
+      members: updatedMembers,
       taskHistories: [historyEntry, ...state.taskHistories],
     }));
 
-    if (targetTask) {
-      get().logActivity({
-        workspace_id: targetTask.workspace_id,
-        type: 'task',
-        action: 'Assigned task "' + targetTask.title + '" to ' + (member ? member.name : (memberId || 'Unassigned')),
-        actor_name: 'Founder',
-      });
-    }
+    get().logActivity({
+      workspace_id: targetTask.workspace_id,
+      type: 'task',
+      action: `Assigned task "${targetTask.title}" to ${member ? member.name : memberId || 'Unassigned'}`,
+      actor_name: 'Founder',
+    });
 
-    QontroSupabaseService.updateTask(taskId, { assigned_to: memberId }).catch((err) =>
-      console.error('[Store] assignTask DB error:', err)
-    );
-
-    if (targetTask) {
-      QontroSupabaseService.createTaskHistory({
+    try {
+      await QontroSupabaseService.updateTask(taskId, { assigned_to: memberId });
+      await QontroSupabaseService.createTaskHistory({
         workspace_id: targetTask.workspace_id,
         task_id: taskId,
         action: 'Reassigned',
         actor_name: 'Founder',
         previous_value: targetTask.assigned_to || 'Unassigned',
         new_value: member ? member.name : (memberId || 'Unassigned'),
-      }).catch((err) => console.warn('[Store] assignTask history DB warning:', err.message));
+      }).catch(() => null);
+    } catch (err: unknown) {
+      set({ tasks: prevTasks, members: prevMembers });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] assignTask rollback:', msg);
+      throw err;
     }
   },
 
-  addTaskComment: (taskId, content, authorName = 'Founder') => {
+  addTaskComment: async (taskId, content, authorName = 'Founder') => {
     const task = get().tasks.find((t) => t.id === taskId);
     if (!task) return;
 
@@ -429,27 +528,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       created_at: new Date().toISOString(),
     };
 
+    const prevTasks = get().tasks;
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.id === taskId ? { ...t, comments: [...(t.comments || []), comment] } : t
       ),
     }));
 
-    QontroSupabaseService.createTaskComment(comment).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createTaskComment(comment);
       if (saved) {
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t.id === taskId ? {
-              ...t,
-              comments: t.comments?.map((c) => (c.id === id ? { ...c, ...saved } : c)) || [],
-            } : t
+            t.id === taskId
+              ? {
+                  ...t,
+                  comments: t.comments?.map((c) => (c.id === id ? { ...c, ...saved } : c)) || [],
+                }
+              : t
           ),
         }));
       }
-    }).catch((err) => console.error('[Store] addTaskComment DB error:', err));
+    } catch (err: unknown) {
+      set({ tasks: prevTasks });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addTaskComment rollback:', msg);
+      throw err;
+    }
   },
 
-  addProject: (newPrj) => {
+  addProject: async (newPrj) => {
     const id = newId();
     const project: Project = {
       ...newPrj,
@@ -457,6 +565,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       health_score: 100,
       created_at: new Date().toISOString(),
     };
+
+    const prevProjects = get().projects;
     set((state) => ({ projects: [project, ...state.projects] }));
 
     get().logActivity({
@@ -466,21 +576,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Founder',
     });
 
-    QontroSupabaseService.createProject(newPrj).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createProject(newPrj);
       if (saved) {
         set((state) => ({
           projects: state.projects.map((p) => (p.id === id ? { ...p, ...saved } : p)),
         }));
       }
-    }).catch((err) => console.error('[Store] addProject DB error:', err));
+    } catch (err: unknown) {
+      set({ projects: prevProjects });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addProject rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteProject: (projectId) => {
-    const target = get().projects.find((p) => p.id === projectId);
+  updateProject: async (projectId, patch) => {
+    const prevProjects = get().projects;
+    set((state) => ({
+      projects: state.projects.map((p) => (p.id === projectId ? { ...p, ...patch } : p)),
+    }));
+
+    try {
+      await QontroSupabaseService.updateProject(projectId, patch);
+    } catch (err: unknown) {
+      set({ projects: prevProjects });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] updateProject rollback:', msg);
+      throw err;
+    }
+  },
+
+  deleteProject: async (projectId) => {
+    const prevProjects = get().projects;
+    const prevTasks = get().tasks;
+    const target = prevProjects.find((p) => p.id === projectId);
+
     set((state) => ({
       projects: state.projects.filter((p) => p.id !== projectId),
       tasks: state.tasks.filter((t) => t.project_id !== projectId),
     }));
+
     if (target) {
       get().logActivity({
         workspace_id: target.workspace_id,
@@ -490,12 +626,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     }
 
-    QontroSupabaseService.deleteProject(projectId).catch((err) =>
-      console.error('[Store] deleteProject DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.deleteProject(projectId);
+    } catch (err: unknown) {
+      set({ projects: prevProjects, tasks: prevTasks });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteProject rollback:', msg);
+      throw err;
+    }
   },
 
-  addClient: (newClient) => {
+  addClient: async (newClient) => {
     const id = newId();
     const client: Client = {
       ...newClient,
@@ -503,7 +644,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       total_billed: 0,
       created_at: new Date().toISOString(),
     };
+    const prevClients = get().clients;
     set((state) => ({ clients: [client, ...state.clients] }));
+
     get().logActivity({
       workspace_id: newClient.workspace_id,
       type: 'member',
@@ -511,28 +654,41 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Founder',
     });
 
-    QontroSupabaseService.createClient(newClient).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createClient(newClient);
       if (saved) {
         set((state) => ({
           clients: state.clients.map((c) => (c.id === id ? { ...c, ...saved } : c)),
         }));
       }
-    }).catch((err) => console.error('[Store] addClient DB error:', err));
+    } catch (err: unknown) {
+      set({ clients: prevClients });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addClient rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteClient: (clientId) => {
+  deleteClient: async (clientId) => {
+    const prevClients = get().clients;
     set((state) => ({
       clients: state.clients.filter((c) => c.id !== clientId),
     }));
 
-    QontroSupabaseService.deleteClient(clientId).catch((err) =>
-      console.error('[Store] deleteClient DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.deleteClient(clientId);
+    } catch (err: unknown) {
+      set({ clients: prevClients });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteClient rollback:', msg);
+      throw err;
+    }
   },
 
-  addInvoice: (newInv) => {
+  addInvoice: async (newInv) => {
     const id = newId();
     const invoice: Invoice = { ...newInv, id };
+    const prevInvoices = get().invoices;
     set((state) => ({ invoices: [invoice, ...state.invoices] }));
 
     get().logActivity({
@@ -542,29 +698,45 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Finance Lead',
     });
 
-    QontroSupabaseService.createInvoice(newInv).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createInvoice(newInv);
       if (saved) {
         set((state) => ({
           invoices: state.invoices.map((i) => (i.id === id ? { ...i, ...saved } : i)),
         }));
       }
-    }).catch((err) => console.error('[Store] addInvoice DB error:', err));
+    } catch (err: unknown) {
+      set({ invoices: prevInvoices });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addInvoice rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteInvoice: (invoiceId) => {
+  deleteInvoice: async (invoiceId) => {
+    const prevInvoices = get().invoices;
     set((state) => ({
       invoices: state.invoices.filter((i) => i.id !== invoiceId),
     }));
-    QontroSupabaseService.deleteInvoice(invoiceId).catch((err) =>
-      console.error('[Store] deleteInvoice DB error:', err)
-    );
+
+    try {
+      await QontroSupabaseService.deleteInvoice(invoiceId);
+    } catch (err: unknown) {
+      set({ invoices: prevInvoices });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteInvoice rollback:', msg);
+      throw err;
+    }
   },
 
-  updateInvoiceStatus: (invId, status) => {
-    const target = get().invoices.find((i) => i.id === invId);
+  updateInvoiceStatus: async (invId, status) => {
+    const prevInvoices = get().invoices;
+    const target = prevInvoices.find((i) => i.id === invId);
+
     set((state) => ({
       invoices: state.invoices.map((inv) => (inv.id === invId ? { ...inv, status } : inv)),
     }));
+
     if (target) {
       get().logActivity({
         workspace_id: target.workspace_id,
@@ -573,18 +745,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         actor_name: 'Finance Lead',
       });
     }
-    QontroSupabaseService.updateInvoiceStatus(invId, status).catch((err) =>
-      console.error('[Store] updateInvoiceStatus DB error:', err)
-    );
+
+    try {
+      await QontroSupabaseService.updateInvoiceStatus(invId, status);
+    } catch (err: unknown) {
+      set({ invoices: prevInvoices });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] updateInvoiceStatus rollback:', msg);
+      throw err;
+    }
   },
 
-  addExpense: (newExp) => {
+  addExpense: async (newExp) => {
+    const id = newId();
     const expense: Expense = {
       ...newExp,
-      id: newId(),
+      id,
       created_at: new Date().toISOString(),
     };
+    const prevExpenses = get().expenses;
     set((state) => ({ expenses: [expense, ...state.expenses] }));
+
     get().logActivity({
       workspace_id: newExp.workspace_id,
       type: 'invoice',
@@ -592,32 +773,45 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Finance Lead',
     });
 
-    QontroSupabaseService.createExpense(newExp).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createExpense(newExp);
       if (saved) {
         set((state) => ({
-          expenses: state.expenses.map((e) => (e.id === expense.id ? { ...e, ...saved } : e)),
+          expenses: state.expenses.map((e) => (e.id === id ? { ...e, ...saved } : e)),
         }));
       }
-    }).catch((err) => console.error('[Store] addExpense DB error:', err));
+    } catch (err: unknown) {
+      set({ expenses: prevExpenses });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addExpense rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteExpense: (expenseId) => {
+  deleteExpense: async (expenseId) => {
+    const prevExpenses = get().expenses;
     set((state) => ({
       expenses: state.expenses.filter((e) => e.id !== expenseId),
     }));
 
-    QontroSupabaseService.deleteExpense(expenseId).catch((err) =>
-      console.error('[Store] deleteExpense DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.deleteExpense(expenseId);
+    } catch (err: unknown) {
+      set({ expenses: prevExpenses });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteExpense rollback:', msg);
+      throw err;
+    }
   },
 
-  addDocument: (newDoc) => {
+  addDocument: async (newDoc) => {
     const id = newId();
     const doc: Document = {
       ...newDoc,
       id,
       updated_at: new Date().toISOString(),
     };
+    const prevDocs = get().documents;
     set((state) => ({ documents: [doc, ...state.documents] }));
 
     get().logActivity({
@@ -627,113 +821,331 @@ export const useAppStore = create<AppState>((set, get) => ({
       actor_name: 'Founder',
     });
 
-    QontroSupabaseService.createDocument(newDoc).then((saved) => {
+    try {
+      const saved = await QontroSupabaseService.createDocument(newDoc);
       if (saved) {
         set((state) => ({
           documents: state.documents.map((d) => (d.id === id ? { ...d, ...saved } : d)),
         }));
       }
-    }).catch((err) => console.error('[Store] addDocument DB error:', err));
+    } catch (err: unknown) {
+      set({ documents: prevDocs });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addDocument rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteDocument: (docId) => {
+  deleteDocument: async (docId) => {
+    const prevDocs = get().documents;
     set((state) => ({
       documents: state.documents.filter((d) => d.id !== docId),
     }));
-    QontroSupabaseService.deleteDocument(docId).catch((err) =>
-      console.error('[Store] deleteDocument DB error:', err)
-    );
+
+    try {
+      await QontroSupabaseService.deleteDocument(docId);
+    } catch (err: unknown) {
+      set({ documents: prevDocs });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteDocument rollback:', msg);
+      throw err;
+    }
   },
 
-  updateDocument: (id, title, content) => {
+  updateDocument: async (id, title, content) => {
+    const prevDocs = get().documents;
     set((state) => ({
       documents: state.documents.map((d) =>
         d.id === id ? { ...d, title, content, updated_at: new Date().toISOString() } : d
       ),
     }));
-    QontroSupabaseService.updateDocument(id, { title, content }).catch((err) =>
-      console.error('[Store] updateDocument DB error:', err)
-    );
+
+    try {
+      await QontroSupabaseService.updateDocument(id, { title, content });
+    } catch (err: unknown) {
+      set({ documents: prevDocs });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] updateDocument rollback:', msg);
+      throw err;
+    }
   },
 
-  addMember: (newMem) => {
+  duplicateDocument: async (docId) => {
+    const original = get().documents.find((d) => d.id === docId);
+    if (!original) return;
+
+    const id = newId();
+    const duplicatedDoc: Document = {
+      ...original,
+      id,
+      title: `${original.title} (Copy)`,
+      updated_at: new Date().toISOString(),
+    };
+
+    const prevDocs = get().documents;
+    set((state) => ({ documents: [duplicatedDoc, ...state.documents] }));
+
+    get().logActivity({
+      workspace_id: original.workspace_id,
+      type: 'document',
+      action: `Duplicated template: ${original.title}`,
+      actor_name: 'Founder / Admin',
+    });
+
+    try {
+      const saved = await QontroSupabaseService.createDocument({
+        workspace_id: original.workspace_id,
+        title: `${original.title} (Copy)`,
+        content: original.content,
+        type: original.type,
+        category: original.category,
+        tags: original.tags,
+        created_by_name: original.created_by_name,
+        is_restricted: original.is_restricted,
+      });
+      if (saved) {
+        set((state) => ({
+          documents: state.documents.map((d) => (d.id === id ? { ...d, ...saved } : d)),
+        }));
+      }
+    } catch (err: unknown) {
+      set({ documents: prevDocs });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] duplicateDocument rollback:', msg);
+      throw err;
+    }
+  },
+
+  addMember: async (newMem) => {
+    const id = newId();
     const member: WorkspaceMember = {
       ...newMem,
-      id: newId(),
+      id,
       joined_at: new Date().toISOString(),
     };
+    const prevMembers = get().members;
     set((state) => ({ members: [...state.members, member] }));
+
     get().logActivity({
       workspace_id: newMem.workspace_id,
       type: 'member',
-      action: 'Invited team member: ' + member.name + ' (' + member.email + ')',
+      action: 'Added team member: ' + member.name + ' (' + member.email + ')',
       actor_name: 'Founder',
     });
+
+    try {
+      const saved = await QontroSupabaseService.addMember(newMem);
+      if (saved) {
+        set((state) => ({
+          members: state.members.map((m) => (m.id === id ? { ...m, ...saved } : m)),
+        }));
+      }
+    } catch (err: unknown) {
+      set({ members: prevMembers });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addMember rollback:', msg);
+      throw err;
+    }
   },
 
-  deleteMember: (memberId) => {
+  updateMember: async (memberId, patch) => {
+    const prevMembers = get().members;
+    set((state) => ({
+      members: state.members.map((m) => (m.id === memberId ? { ...m, ...patch } : m)),
+    }));
+
+    try {
+      await QontroSupabaseService.updateMember(memberId, patch);
+    } catch (err: unknown) {
+      set({ members: prevMembers });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] updateMember rollback:', msg);
+      throw err;
+    }
+  },
+
+  deleteMember: async (memberId) => {
+    const prevMembers = get().members;
+    const target = prevMembers.find((m) => m.id === memberId);
+
     set((state) => ({
       members: state.members.filter((m) => m.id !== memberId),
     }));
+
+    if (target) {
+      get().logActivity({
+        workspace_id: target.workspace_id,
+        type: 'member',
+        action: 'Removed team member: ' + target.name,
+        actor_name: 'Founder',
+      });
+    }
+
+    try {
+      await QontroSupabaseService.removeMember(memberId);
+    } catch (err: unknown) {
+      set({ members: prevMembers });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] deleteMember rollback:', msg);
+      throw err;
+    }
   },
 
-  addSkill: (newSkill) => {
-    const skill: Skill = { ...newSkill, id: newId() };
+  addInvitation: async (invitation) => {
+    const id = newId();
+    const newInv: Invitation = {
+      ...invitation,
+      id,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+
+    const prevInvitations = get().invitations;
+    set((state) => ({ invitations: [newInv, ...state.invitations] }));
+
+    get().logActivity({
+      workspace_id: invitation.workspace_id,
+      type: 'member',
+      action: `Issued invitation to ${invitation.email} as ${invitation.role}`,
+      actor_name: 'Founder / Admin',
+    });
+
+    try {
+      const saved = await QontroSupabaseService.createInvitation(invitation);
+      if (saved) {
+        set((state) => ({
+          invitations: state.invitations.map((inv) => (inv.id === id ? { ...inv, ...saved } : inv)),
+        }));
+      }
+    } catch (err: unknown) {
+      set({ invitations: prevInvitations });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addInvitation rollback:', msg);
+      throw err;
+    }
+  },
+
+  cancelInvitation: async (invitationId) => {
+    const prevInvitations = get().invitations;
+    set((state) => ({
+      invitations: state.invitations.map((inv) =>
+        inv.id === invitationId ? { ...inv, status: 'cancelled' } : inv
+      ),
+    }));
+
+    try {
+      await QontroSupabaseService.cancelInvitation(invitationId);
+    } catch (err: unknown) {
+      set({ invitations: prevInvitations });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] cancelInvitation rollback:', msg);
+      throw err;
+    }
+  },
+
+  addSkill: async (newSkill) => {
+    const id = newId();
+    const skill: Skill = { ...newSkill, id };
+    const prevSkills = get().skills;
     set((state) => ({ skills: [...state.skills, skill] }));
-    QontroSupabaseService.createSkill(newSkill).catch((err) =>
-      console.warn('[Store] createSkill DB sync warning:', err.message)
-    );
+
+    try {
+      const saved = await QontroSupabaseService.createSkill(newSkill);
+      if (saved) {
+        set((state) => ({
+          skills: state.skills.map((s) => (s.id === id ? { ...s, ...saved } : s)),
+        }));
+      }
+    } catch (err: unknown) {
+      set({ skills: prevSkills });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] addSkill rollback:', msg);
+      throw err;
+    }
   },
 
-  approveAIRecommendation: (recId) => {
+  approveAIRecommendation: async (recId) => {
     const { aiRecommendations, tasks } = get();
     const rec = aiRecommendations.find((r) => r.id === recId);
     if (!rec) return;
 
-    if (rec.type === 'assignment' && rec.target_task_id && rec.recommended_member_id) {
-      set({
-        tasks: tasks.map((t) =>
-          t.id === rec.target_task_id
-            ? { ...t, assigned_to: rec.recommended_member_id, status: 'todo' as TaskStatus }
-            : t
-        ),
-      });
-      get().logActivity({
-        workspace_id: rec.workspace_id,
-        type: 'ai',
-        action: 'Approved AI assignment recommendation for task ' + rec.target_task_id,
-        actor_name: 'Founder',
-      });
-      QontroSupabaseService.updateTask(rec.target_task_id, {
-        assigned_to: rec.recommended_member_id,
-        status: 'todo'
-      }).catch(console.error);
-    }
+    const prevRecommendations = aiRecommendations;
+    const prevTasks = tasks;
 
+    // Optimistic approval
     set({
       aiRecommendations: aiRecommendations.map((r) =>
         r.id === recId ? { ...r, status: 'approved' } : r
       ),
     });
 
-    QontroSupabaseService.updateAIRecommendationStatus(recId, 'approved').catch((err) =>
-      console.error('[Store] approveAIRecommendation DB error:', err)
-    );
+    if (rec.type === 'assignment' && rec.target_task_id && rec.recommended_member_id) {
+      const updatedTasks = tasks.map((t) =>
+        t.id === rec.target_task_id
+          ? { ...t, assigned_to: rec.recommended_member_id, status: 'todo' as TaskStatus }
+          : t
+      );
+      set({
+        tasks: updatedTasks,
+        members: get().members.map((m) => ({
+          ...m,
+          workload_percentage: calculateMemberWorkload(m.id, updatedTasks),
+        })),
+      });
+
+      get().logActivity({
+        workspace_id: rec.workspace_id,
+        type: 'ai',
+        action: 'Approved AI assignment recommendation for task ' + rec.target_task_id,
+        actor_name: 'Founder',
+      });
+    }
+
+    try {
+      await QontroSupabaseService.updateAIRecommendationStatus(recId, 'approved');
+      if (rec.type === 'assignment' && rec.target_task_id && rec.recommended_member_id) {
+        await QontroSupabaseService.updateTask(rec.target_task_id, {
+          assigned_to: rec.recommended_member_id,
+          status: 'todo',
+        });
+        await QontroSupabaseService.createTaskHistory({
+          workspace_id: rec.workspace_id,
+          task_id: rec.target_task_id,
+          action: 'AI Recommendation Approved (Reassigned)',
+          actor_name: 'Founder / AI Ops',
+          new_value: rec.recommended_member_id,
+        }).catch(() => null);
+      }
+    } catch (err: unknown) {
+      set({
+        aiRecommendations: prevRecommendations,
+        tasks: prevTasks,
+      });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] approveAIRecommendation rollback:', msg);
+      throw err;
+    }
   },
 
-  dismissAIRecommendation: (recId) => {
+  dismissAIRecommendation: async (recId) => {
+    const prevRecommendations = get().aiRecommendations;
     set((state) => ({
       aiRecommendations: state.aiRecommendations.map((r) =>
         r.id === recId ? { ...r, status: 'dismissed' } : r
       ),
     }));
 
-    QontroSupabaseService.updateAIRecommendationStatus(recId, 'dismissed').catch((err) =>
-      console.error('[Store] dismissAIRecommendation DB error:', err)
-    );
+    try {
+      await QontroSupabaseService.updateAIRecommendationStatus(recId, 'dismissed');
+    } catch (err: unknown) {
+      set({ aiRecommendations: prevRecommendations });
+      const msg = err instanceof Error ? err.message : 'Database error';
+      console.error('[Store] dismissAIRecommendation rollback:', msg);
+      throw err;
+    }
   },
 
-  generateAIRecommendation: (rec) => {
+  generateAIRecommendation: async (rec) => {
     const newRec: AIRecommendation = {
       ...rec,
       id: newId(),
@@ -757,6 +1169,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       clients: [],
       activityLogs: [],
       aiRecommendations: [],
+      invitations: [],
+      notifications: [],
     });
   },
 }));

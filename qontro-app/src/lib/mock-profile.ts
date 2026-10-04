@@ -17,13 +17,12 @@ import {
  * MOCK SETUP CONFIGURATION
  * Set ENABLE_MOCK_PROFILE to false to disable mock profile & revert to pure Supabase auth.
  */
-export const ENABLE_MOCK_PROFILE = true;
+export const ENABLE_MOCK_PROFILE = false;
 
 export const MOCK_CREDENTIALS = {
-  email: 'techtone546@gmail.com',
-  password: 'Shezan2925@',
-  company: 'LeadLinked',
-  founderName: 'Mohammed Shezan Ahmed',
+  email: 'founder@example.com',
+  company: 'Demo Agency',
+  founderName: 'Demo Founder',
   founderRole: 'Founder & CEO',
 };
 

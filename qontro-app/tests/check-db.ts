@@ -1,7 +1,36 @@
 import { createClient } from '@supabase/supabase-js';
+import * as fs from 'fs';
+import * as path from 'path';
 
-const url = 'https://ejwbnbkupsfvfpnsbhgw.supabase.co';
-const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqd2JuYmt1cHNmdmZwbnNiaGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNTM4MjgsImV4cCI6MjA5ODYyOTgyOH0.rZURUan2lCQPJBL11PBeq5eqEmSMbNmvb_q_lMgfezE';
+// Load environment variables from .env.local if not already set
+function getEnv(key: string): string {
+  if (process.env[key]) return process.env[key]!;
+  try {
+    const envPath = path.resolve(__dirname, '../.env.local');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const [k, ...v] = trimmed.split('=');
+          if (k.trim() === key) {
+            return v.join('=').trim().replace(/^["']|["']$/g, '');
+          }
+        }
+      }
+    }
+  } catch {}
+  return '';
+}
+
+const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
+if (!url || !key) {
+  console.error('Missing Supabase environment variables. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.');
+  process.exit(1);
+}
 
 const supabase = createClient(url, key);
 
@@ -10,7 +39,6 @@ async function check() {
   const tables = [
     'workspaces',
     'workspace_members',
-    'profiles',
     'projects',
     'tasks',
     'task_comments',
@@ -21,7 +49,8 @@ async function check() {
     'expenses',
     'documents',
     'activity_logs',
-    'ai_recommendations'
+    'ai_recommendations',
+    'invitations'
   ];
 
   for (const table of tables) {

@@ -13,7 +13,61 @@ import {
   Expense,
   AIRecommendation,
   ActivityLog,
+  Invitation,
 } from '@/types';
+
+/**
+ * Deterministic Workload calculation formula:
+ * Weekly capacity = 40 hours (standard).
+ * Active task statuses that consume capacity: ['todo', 'doing', 'review', 'blocked'].
+ * Backlog and completed tasks do not consume active weekly capacity.
+ * Each task consumes task.estimated_hours (or fallback default 4h).
+ * Workload = clamp(round((assignedHours / capacityHours) * 100), 0, 100).
+ */
+export function calculateMemberWorkload(
+  memberId: string,
+  tasks: Task[],
+  weeklyCapacityHours: number = 40
+): number {
+  if (!memberId || !tasks || tasks.length === 0) return 0;
+  const activeTasks = tasks.filter(
+    (t) =>
+      t.assigned_to === memberId &&
+      (t.status === 'todo' || t.status === 'doing' || t.status === 'review' || t.status === 'blocked')
+  );
+  if (activeTasks.length === 0) return 0;
+  const totalAssignedHours = activeTasks.reduce((sum, t) => sum + (t.estimated_hours || 4), 0);
+  return Math.min(100, Math.round((totalAssignedHours / weeklyCapacityHours) * 100));
+}
+
+/**
+ * Deterministic Project Health score calculation formula:
+ * Bounded [10, 100].
+ * If project has no tasks: 100 (clean state).
+ * If all tasks are completed: 100.
+ * Base = 100.
+ * Deductions:
+ *   - 20 points per blocked task
+ *   - 25 points per overdue task (deadline past and not completed)
+ * Health = clamp(100 - (blocked * 20 + overdue * 25), 10, 100).
+ */
+export function calculateProjectHealth(projectId: string, tasks: Task[]): number {
+  const projectTasks = tasks.filter((t) => t.project_id === projectId);
+  if (projectTasks.length === 0) return 100;
+
+  const total = projectTasks.length;
+  const completed = projectTasks.filter((t) => t.status === 'completed').length;
+  if (completed === total) return 100;
+
+  const blocked = projectTasks.filter((t) => t.status === 'blocked').length;
+  const now = new Date();
+  const overdue = projectTasks.filter(
+    (t) => t.status !== 'completed' && t.deadline && new Date(t.deadline) < now
+  ).length;
+
+  const deductions = blocked * 20 + overdue * 25;
+  return Math.max(10, Math.min(100, 100 - deductions));
+}
 
 /**
  * QontroSupabaseService
@@ -278,10 +332,34 @@ export class QontroSupabaseService {
     return (data ?? []) as Invoice[];
   }
 
+  static async generateInvoiceNumber(workspaceId: string): Promise<string> {
+    const supabase = this.getClient();
+    try {
+      const { data, error } = await supabase.rpc('generate_invoice_number', { ws_id: workspaceId });
+      if (!error && data) {
+        return data as string;
+      }
+    } catch {
+      // Fallback below
+    }
+    const { count } = await supabase
+      .from('invoices')
+      .select('*', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId);
+    const nextSeq = (count ?? 0) + 1;
+    const year = new Date().getFullYear();
+    return `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
+  }
+
   static async createInvoice(invoice: Omit<Invoice, 'id'>): Promise<Invoice | null> {
+    let invoiceNumber = invoice.invoice_number;
+    if (!invoiceNumber || invoiceNumber.startsWith('INV-TEMP') || invoiceNumber.includes('Math.random')) {
+      invoiceNumber = await this.generateInvoiceNumber(invoice.workspace_id);
+    }
+
     const { data, error } = await this.getClient()
       .from('invoices')
-      .insert(invoice)
+      .insert({ ...invoice, invoice_number: invoiceNumber })
       .select()
       .single();
 
@@ -493,6 +571,82 @@ export class QontroSupabaseService {
     return (data ?? []) as WorkspaceMember[];
   }
 
+  static async addMember(
+    member: Omit<WorkspaceMember, 'id' | 'joined_at'>
+  ): Promise<WorkspaceMember | null> {
+    const { data, error } = await this.getClient()
+      .from('workspace_members')
+      .insert(member)
+      .select()
+      .single();
+
+    if (error) throw new Error('addMember: ' + error.message);
+    return data as WorkspaceMember;
+  }
+
+  static async updateMember(
+    memberId: string,
+    patch: Partial<Omit<WorkspaceMember, 'id' | 'workspace_id' | 'joined_at'>>
+  ): Promise<boolean> {
+    const { error } = await this.getClient()
+      .from('workspace_members')
+      .update(patch)
+      .eq('id', memberId);
+
+    if (error) throw new Error('updateMember: ' + error.message);
+    return true;
+  }
+
+  static async removeMember(memberId: string): Promise<boolean> {
+    const { error } = await this.getClient()
+      .from('workspace_members')
+      .delete()
+      .eq('id', memberId);
+
+    if (error) throw new Error('removeMember: ' + error.message);
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
+  // INVITATIONS
+  // --------------------------------------------------------------------------
+  static async fetchInvitations(workspaceId: string): Promise<Invitation[]> {
+    const { data, error } = await this.getClient()
+      .from('invitations')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error('fetchInvitations: ' + error.message);
+    return (data ?? []) as Invitation[];
+  }
+
+  static async createInvitation(
+    invitation: Omit<Invitation, 'id' | 'created_at' | 'status'>
+  ): Promise<Invitation | null> {
+    const { data, error } = await this.getClient()
+      .from('invitations')
+      .insert({
+        ...invitation,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error('createInvitation: ' + error.message);
+    return data as Invitation;
+  }
+
+  static async cancelInvitation(invitationId: string): Promise<boolean> {
+    const { error } = await this.getClient()
+      .from('invitations')
+      .update({ status: 'cancelled' })
+      .eq('id', invitationId);
+
+    if (error) throw new Error('cancelInvitation: ' + error.message);
+    return true;
+  }
+
   // --------------------------------------------------------------------------
   // SKILLS
   // --------------------------------------------------------------------------
@@ -526,6 +680,38 @@ export class QontroSupabaseService {
 
     if (error) throw new Error('updateSkillScore: ' + error.message);
     return true;
+  }
+
+  static async updateSkillVerificationOnTaskComplete(
+    workspaceId: string,
+    memberId: string,
+    skillsLearned: string[] = []
+  ): Promise<void> {
+    if (!memberId || skillsLearned.length === 0) return;
+    const client = this.getClient();
+    for (const skillName of skillsLearned) {
+      const { data: existingSkill } = await client
+        .from('skills')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('member_id', memberId)
+        .ilike('name', skillName.trim())
+        .maybeSingle();
+
+      if (existingSkill) {
+        const newCount = (existingSkill.verified_tasks_count || 0) + 1;
+        const isVerified = newCount >= 3 || existingSkill.is_verified;
+        const newScore = Math.min(99, (existingSkill.score || 70) + 2);
+        await client
+          .from('skills')
+          .update({
+            verified_tasks_count: newCount,
+            is_verified: isVerified,
+            score: newScore,
+          })
+          .eq('id', existingSkill.id);
+      }
+    }
   }
 
   // --------------------------------------------------------------------------

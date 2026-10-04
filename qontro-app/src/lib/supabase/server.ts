@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 /**
@@ -57,8 +58,6 @@ export function createSupabaseAdminClient() {
     );
   }
 
-  // Import is deferred to ensure this is never bundled client-side
-  const { createClient } = require('@supabase/supabase-js');
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,

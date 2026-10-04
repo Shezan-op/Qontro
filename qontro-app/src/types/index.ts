@@ -27,12 +27,15 @@ export interface WorkspaceMember {
 
 export interface Skill {
   id: string;
-  user_id: string;
+  user_id?: string;
+  member_id?: string;
   workspace_id: string;
-  skill_name: string;
-  score: number; // 1-10
-  category: 'engineering' | 'design' | 'content' | 'marketing' | 'operations';
+  name?: string;
+  skill_name?: string;
+  score: number; // 1-100
+  category: 'engineering' | 'design' | 'content' | 'marketing' | 'operations' | string;
   verified_tasks_count: number;
+  is_verified?: boolean;
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'warning' | 'critical' | 'completed' | 'paused';
@@ -191,4 +194,29 @@ export interface AIRecommendation {
   status: 'pending' | 'approved' | 'dismissed';
   created_at: string;
 }
+
+export interface Invitation {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: WorkspaceRole;
+  token: string;
+  invited_by?: string;
+  status: 'pending' | 'accepted' | 'expired' | 'cancelled';
+  expires_at: string;
+  created_at: string;
+  accepted_at?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  workspace_id: string;
+  title: string;
+  message: string;
+  type: 'urgent' | 'warning' | 'info' | 'success';
+  link?: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 

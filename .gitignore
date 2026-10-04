@@ -33,4 +33,5 @@ docs/
 !documentation/*.md
 qontro-final-checklist.md
 *.sql.backup
+*.tsbuildinfo
 

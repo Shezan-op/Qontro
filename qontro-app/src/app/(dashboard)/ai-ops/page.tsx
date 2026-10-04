@@ -37,6 +37,8 @@ export default function AIOpsPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const pendingRecs = aiRecommendations.filter((r) => r.status === 'pending');
   const approvedRecs = aiRecommendations.filter((r) => r.status === 'approved');
 
@@ -45,21 +47,27 @@ export default function AIOpsPage() {
     if (!promptInput.trim()) return;
 
     setIsProcessing(true);
+    setErrorMessage(null);
+
     try {
-      const res = await fetch('/api/ai/triage', {
+      const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: promptInput,
-          tasks,
-          members,
-          projects,
-          workspaceName: currentWorkspace.name,
+          type: 'triage',
+          workspaceId: currentWorkspace.id,
+          contextData: {
+            tasks: tasks.slice(0, 15).map((t) => ({ id: t.id, title: t.title, status: t.status, priority: t.priority, assigned_to: t.assigned_to })),
+            members: members.map((m) => ({ id: m.id, name: m.name, role: m.role, workload: m.workload_percentage })),
+            projects: projects.map((p) => ({ id: p.id, name: p.name, health: p.health_score })),
+          },
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+
+      if (res.ok && data.success) {
         if (data.recommendations && Array.isArray(data.recommendations)) {
           data.recommendations.forEach((rec: Partial<AIRecommendation>) => {
             generateAIRecommendation({
@@ -77,33 +85,13 @@ export default function AIOpsPage() {
           });
         }
       } else {
-        // Fallback local heuristic recommendation
-        generateAIRecommendation({
-          workspace_id: currentWorkspace.id,
-          type: 'assignment',
-          title: `Optimized Allocation: "${promptInput.slice(0, 40)}"`,
-          description: `Analyzed workspace load and skill scores to suggest fastest path to delivery.`,
-          target_task_id: tasks[0]?.id || 'tsk_1',
-          target_member_id: members[0]?.id || 'mem_1',
-          match_score: 93,
-          reasons: ['Capacity within optimal threshold', 'Demonstrated verified skill score of 9.2/10 in domain'],
-          before_state: 'Unassigned task backlog',
-          after_state: 'Assigned to domain lead with 0% risk factor',
-        });
+        // Honest error handling (Rule 33): Never inject fake AI fallback cards
+        const errorMsg = data?.error?.message || 'AI service is currently unavailable.';
+        setErrorMessage(`AI Execution Failed: ${errorMsg} (Configure OLLAMA_API_KEY in your environment to activate live model execution. Fabricated recommendations are strictly prohibited).`);
       }
-    } catch {
-      generateAIRecommendation({
-        workspace_id: currentWorkspace.id,
-        type: 'assignment',
-        title: `Optimized Allocation: "${promptInput.slice(0, 40)}"`,
-        description: `Automated matching completed based on real-time team workload and historical tasks.`,
-        target_task_id: tasks[0]?.id || 'tsk_1',
-        target_member_id: members[0]?.id || 'mem_1',
-        match_score: 91,
-        reasons: ['Member workload under 60%', 'Historical sprint velocity matches requirements'],
-        before_state: 'Task in backlog',
-        after_state: 'Assigned to fastest lead',
-      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setErrorMessage(`AI Provider Error: ${msg}. No synthetic data was generated.`);
     } finally {
       setIsProcessing(false);
       setPromptInput('');
@@ -149,6 +137,22 @@ export default function AIOpsPage() {
           </button>
         </div>
       </div>
+
+      {/* Honest Error Banner (Rule 33 / Rule 39) */}
+      {errorMessage && (
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex items-start justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-semibold text-white">Live AI Execution Notice</div>
+              <p className="text-zinc-300 leading-relaxed text-[11.5px]">{errorMessage}</p>
+            </div>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="text-amber-400 hover:text-white p-1 cursor-pointer shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* AI Triage Prompt Input Bar */}
       <div className="rounded-xl border border-[#1f1f26] bg-[#08080a] p-4 space-y-3">
